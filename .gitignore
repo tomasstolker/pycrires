@@ -1,0 +1,15 @@
+*.pyc
+.DS_Store
+docs/_build
+docs/api
+docs/.ipynb_checkpoints/
+docs/header.csv
+docs/header.xlsx
+build/
+dist/
+pycrires.egg-info/
+.coverage
+.pytest_cache/
+htmlcov/
+coverage.xml
+.tox/
