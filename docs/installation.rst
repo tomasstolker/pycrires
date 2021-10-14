@@ -21,47 +21,28 @@ Or, to update to the most recent version:
    $ pip install --upgrade pycrires
 
 .. important::
-   The pipeline is under development so currently it is best to install the Github version (see below).
+   The pipeline is currently under development so it is best to install the Github version (see below).
 
 Installation from Github
 ------------------------
 
-Installation from Github is done directly with pip:
+Installation from Github can also be done with pip:
 
 .. code-block:: console
 
     $ pip install git+git://github.com:tomasstolker/pycrires.git
 
-Or by cloning the repository:
+Alternatively, in case you want to look into and/or make changes to the code, it is best to clone the repository:
 
 .. code-block:: console
 
     $ git clone git@github.com:tomasstolker/pycrires.git
 
-And running the setup script to install the package and dependencies:
+Then, the package is installed by running pip in the cloned repository folder:
 
 .. code-block:: console
 
-    $ python setup.py install
-
-.. important::
-   If an error occurs when running ``setup.py`` then possibly ``pip`` needs to be updated to the latest version:
-
-   .. code-block:: console
-
-       $ pip install --upgrade pip
-
-Alternatively to running the ``setup.py`` file, the folder where ``pycrires`` is located can also be added to the ``PYTHONPATH`` environment variable such that the package is found by Python. The command may depend on the OS that is used, but is typically something like:
-
-.. code-block:: console
-
-    $ export PYTHONPATH=$PYTHONPATH:/path/to/pycrires
-
-In that case, it is also needed to manually install the dependencies:
-
-.. code-block:: console
-
-    $ pip install -r requirements.txt
+    $ pip install -e .
 
 New commits can be pulled from Github once a local copy of the repository exists:
 

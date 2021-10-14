@@ -16,3 +16,8 @@ coverage.xml
 calib/
 product/
 tmp/
+docs/calib/
+docs/product/
+docs/tmp/
+docs/raw/
+docs/files.json
