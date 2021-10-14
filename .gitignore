@@ -13,3 +13,6 @@ pycrires.egg-info/
 htmlcov/
 coverage.xml
 .tox/
+calib/
+product/
+tmp/

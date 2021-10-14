@@ -45,3 +45,6 @@ clean:
 	rm -rf pycrires.egg-info/
 	rm -rf htmlcov/
 	rm -rf .tox/
+	rm -rf calib
+	rm -rf product
+	rm -rf tmp
