@@ -11,7 +11,7 @@ reqs = [str(req.requirement) for req in reqs]
 setup(
     name='pycrires',
     version='0.0.1',
-    description='Data reduction pipeline for VLT/CRIRES',
+    description='Data reduction pipeline for VLT/CRIRES+',
     long_description=open('README.rst').read(),
     long_description_content_type='text/x-rst',
     author='Tomas Stolker',

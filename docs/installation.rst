@@ -32,7 +32,7 @@ Installation from Github can also be done with pip:
 
     $ pip install git+git://github.com:tomasstolker/pycrires.git
 
-Alternatively, in case you want to look into and/or make changes to the code, it is best to clone the repository:
+Alternatively, in case you want to look into the code, it is best to clone the repository:
 
 .. code-block:: console
 
@@ -51,6 +51,11 @@ New commits can be pulled from Github once a local copy of the repository exists
     $ git pull origin main
 
 Do you want to make changes to the code? Please fork the `pycrires` repository on the Github page and clone your own fork instead of the main repository. Contributions and pull requests are very welcome (see :ref:`contributing` section).
+
+EsoRex
+------
+
+In addition to ``pycrires``, it is required to install EsoRex and the recipes for CRIRES+. Please follow the instructions on the `ESO website <https://www.eso.org/sci/software/pipelines/>`_. There are recipes available for both the old and upgraded CRIRES instrument so it is important to follow the instructions for *CR2RES* instead of *CRIRES*. On macOS, it is most convenient to use `MacPorts <https://www.eso.org/sci/software/pipelines/installation/macports.html>`_ for installing EsoRex and the recipes.
 
 Testing `pycrires`
 ------------------
