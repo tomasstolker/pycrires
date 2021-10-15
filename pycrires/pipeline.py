@@ -44,7 +44,9 @@ class Pipeline:
             None
         """
 
-        self._print_section("Pipeline for VLT/CRIRES+", bound_char="=", extra_line=False)
+        self._print_section(
+            "Pipeline for VLT/CRIRES+", bound_char="=", extra_line=False
+        )
 
         # Absolute path of the main reduction folder
         self.path = pathlib.Path(path).resolve()
@@ -307,8 +309,7 @@ class Pipeline:
 
             elif "ARCFILE" not in header:
                 warnings.warn(
-                    f"The ARCFILE keyword is not found in "
-                    f"the header of {item.name}"
+                    f"The ARCFILE keyword is not found in " f"the header of {item.name}"
                 )
 
             elif "ORIGFILE" not in header:
@@ -402,15 +403,15 @@ class Pipeline:
 
         file_dict = {}
 
-        if 'ESO DET SEQ1 DIT' in header:
-            file_dict['DIT'] = header['ESO DET SEQ1 DIT']
+        if "ESO DET SEQ1 DIT" in header:
+            file_dict["DIT"] = header["ESO DET SEQ1 DIT"]
         else:
-            file_dict['DIT'] = None
+            file_dict["DIT"] = None
 
-        if 'ESO INS WLEN ID' in header:
-            file_dict['WLEN'] = header['ESO INS WLEN ID']
+        if "ESO INS WLEN ID" in header:
+            file_dict["WLEN"] = header["ESO INS WLEN ID"]
         else:
-            file_dict['WLEN'] = None
+            file_dict["WLEN"] = None
 
         if sof_key in self.file_dict:
             if file_name not in self.file_dict[sof_key]:
@@ -434,12 +435,12 @@ class Pipeline:
 
         temp_file = self.calib_folder / "skycalc_temp.fits"
 
-        print('Retrieving telluric spectrum with SkyCalc...', end='', flush=True)
+        print("Retrieving telluric spectrum with SkyCalc...", end="", flush=True)
 
         sky_calc = skycalc_ipy.SkyCalc()
         sky_spec = sky_calc.get_sky_spectrum(filename=temp_file)
 
-        print(' [DONE]\n')
+        print(" [DONE]\n")
 
         emission_spec = np.column_stack(
             (1e3 * sky_spec["lam"], 1e-3 * sky_spec["flux"])
@@ -475,7 +476,7 @@ class Pipeline:
         for item in self.header_data[indices]["DET.SEQ1.DIT"]:
             unique_dit.add(item)
 
-        print(f'Unique DIT values: {unique_dit}\n')
+        print(f"Unique DIT values: {unique_dit}\n")
 
         # Create SOF file
 
@@ -499,16 +500,18 @@ class Pipeline:
             stdout = subprocess.DEVNULL
 
         if not verbose:
-            print('Running EsoRex...', end='', flush=True)
+            print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
 
         if not verbose:
-            print(' [DONE]')
+            print(" [DONE]")
 
         # Update file dictionary with master dark
 
-        fits_files = pathlib.Path(self.path / "calib").glob("cr2res_cal_dark_*master.fits")
+        fits_files = pathlib.Path(self.path / "calib").glob(
+            "cr2res_cal_dark_*master.fits"
+        )
 
         for item in fits_files:
             self.update_files("CAL_DARK_MASTER", str(item))
@@ -552,11 +555,13 @@ class Pipeline:
             unique_wlen.add(item)
 
         if len(unique_wlen) > 1:
-            raise RuntimeError(f"The FLAT files consist of more than "
-                               f"one wavelength setting: {unique_wlen}. "
-                               f"Please only include FLAT files with "
-                               f"the same INS.WLEN.ID as the science "
-                               f"exposures.")
+            raise RuntimeError(
+                f"The FLAT files consist of more than "
+                f"one wavelength setting: {unique_wlen}. "
+                f"Please only include FLAT files with "
+                f"the same INS.WLEN.ID as the science "
+                f"exposures."
+            )
 
         # Check unique DIT
 
@@ -564,14 +569,16 @@ class Pipeline:
         for item in self.header_data[indices]["DET.SEQ1.DIT"]:
             unique_dit.add(item)
 
-        print(f'Unique DIT values: {unique_dit}\n')
+        print(f"Unique DIT values: {unique_dit}\n")
 
         for dit_item in unique_dit:
             print(f"Creating SOF file for DIT={dit_item}:")
 
             with open(self.sof_file, "w", encoding="utf-8") as sof_open:
                 for item in self.header_data[indices]["ORIGFILE"]:
-                    index = self.header_data.index[self.header_data["ORIGFILE"] == item][0]
+                    index = self.header_data.index[
+                        self.header_data["ORIGFILE"] == item
+                    ][0]
                     flat_dit = self.header_data.iloc[index]["DET.SEQ1.DIT"]
 
                     if flat_dit == dit_item:
@@ -585,28 +592,32 @@ class Pipeline:
                 file_found = False
 
                 for key, value in self.file_dict["CAL_DARK_MASTER"].items():
-                    if not file_found and value['DIT'] == dit_item:
-                        file_name = key.split('/')[-1]
+                    if not file_found and value["DIT"] == dit_item:
+                        file_name = key.split("/")[-1]
                         print(f"   - calib/{file_name} CAL_DARK_MASTER")
                         sof_open.write(f"{key} CAL_DARK_MASTER\n")
                         file_found = True
 
                 if not file_found:
-                    warnings.warn(f"There is not a master dark with DIT = {dit_item} s.")
+                    warnings.warn(
+                        f"There is not a master dark with DIT = {dit_item} s."
+                    )
 
                 # Find bad pixel map
 
                 file_found = False
 
                 for key, value in self.file_dict["CAL_DARK_BPM"].items():
-                    if not file_found and value['DIT'] == dit_item:
-                        file_name = key.split('/')[-1]
+                    if not file_found and value["DIT"] == dit_item:
+                        file_name = key.split("/")[-1]
                         print(f"   - calib/{file_name}.fits CAL_DARK_BPM")
                         sof_open.write(f"{key} CAL_DARK_BPM\n")
                         file_found = True
 
                 if not file_found:
-                    warnings.warn(f"There is not a bad pixel map with DIT = {dit_item} s.")
+                    warnings.warn(
+                        f"There is not a bad pixel map with DIT = {dit_item} s."
+                    )
 
             # Run EsoRex
 
@@ -620,23 +631,27 @@ class Pipeline:
                 stdout = subprocess.DEVNULL
 
             if not verbose:
-                print('Running EsoRex...', end='', flush=True)
+                print("Running EsoRex...", end="", flush=True)
 
             subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
 
             if not verbose:
-                print(' [DONE]')
+                print(" [DONE]")
 
             # Update file dictionary with master flat
 
-            fits_files = pathlib.Path(self.path / "calib").glob("cr2res_cal_flat_*master_flat.fits")
+            fits_files = pathlib.Path(self.path / "calib").glob(
+                "cr2res_cal_flat_*master_flat.fits"
+            )
 
             for item in fits_files:
                 self.update_files("CAL_FLAT_MASTER", str(item))
 
             # Update file dictionary with trace wave table
 
-            fits_files = pathlib.Path(self.path / "calib").glob("cr2res_cal_flat_*tw.fits")
+            fits_files = pathlib.Path(self.path / "calib").glob(
+                "cr2res_cal_flat_*tw.fits"
+            )
 
             for item in fits_files:
                 self.update_files("CAL_FLAT_TW", str(item))
@@ -674,13 +689,15 @@ class Pipeline:
             indices = self.header_data["DPR.TYPE"] == "WAVE,UNE"
 
             if sum(indices) == 0:
-                warnings.warn("No WAVE,UNE file found.")
+                # warnings.warn("No WAVE,UNE file found.")
                 une_found = False
 
             elif sum(indices) > 1:
-                raise RuntimeError("More than one WAVE,UNE file "
-                                   "Please only provided a single "
-                                   "WAVE,UNE file.")
+                raise RuntimeError(
+                    "More than one WAVE,UNE file "
+                    "Please only provided a single "
+                    "WAVE,UNE file."
+                )
 
             else:
                 une_found = True
@@ -702,13 +719,15 @@ class Pipeline:
                 indices = self.header_data["OBJECT"] == "WAVE,FPET"
 
             if sum(indices) == 0:
-                warnings.warn("No WAVE,FPET file found.")
+                # warnings.warn("No WAVE,FPET file found.")
                 fpet_found = False
 
             elif sum(indices) > 1:
-                raise RuntimeError("More than one WAVE,FPET file "
-                                   "Please only provided a single "
-                                   "WAVE,FPET file.")
+                raise RuntimeError(
+                    "More than one WAVE,FPET file "
+                    "Please only provided a single "
+                    "WAVE,FPET file."
+                )
 
             else:
                 fpet_found = True
@@ -735,7 +754,7 @@ class Pipeline:
 
             for key in self.file_dict["CAL_FLAT_TW"]:
                 if not file_found:
-                    file_name = key.split('/')[-1]
+                    file_name = key.split("/")[-1]
                     print(f"   - calib/{file_name} CAL_FLAT_TW")
                     sof_open.write(f"{key} CAL_FLAT_TW\n")
                     file_found = True
@@ -749,13 +768,17 @@ class Pipeline:
 
             for key in self.file_dict["EMISSION_LINES"]:
                 if not file_found:
-                    file_name = key.split('/')[-1]
+                    file_name = key.split("/")[-1]
                     print(f"   - calib/{file_name}.fits EMISSION_LINES")
                     sof_open.write(f"{key} EMISSION_LINES\n")
                     file_found = True
 
             if not file_found:
                 raise RuntimeError("Could not find an emission lines file.")
+
+        # Run EsoRex
+
+        print()
 
         esorex = ["esorex", "cr2res_cal_wave", self.sof_file]
 
@@ -764,24 +787,30 @@ class Pipeline:
         else:
             stdout = subprocess.DEVNULL
 
+        if not verbose:
+            print("Running EsoRex...", end="", flush=True)
+
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
+
+        if not verbose:
+            print(" [DONE]")
 
         # Update file dictionary with UNE wave tables
 
         if une_found:
-            spec_file = f'{self.path}/calib/cr2res_cal_wave_tw_une.fits'
+            spec_file = f"{self.path}/calib/cr2res_cal_wave_tw_une.fits"
             self.update_files("CAL_WAVE_TW", spec_file)
 
-            spec_file = f'{self.path}/calib/cr2res_cal_wave_wave_map_une.fits'
+            spec_file = f"{self.path}/calib/cr2res_cal_wave_wave_map_une.fits"
             self.update_files("CAL_WAVE_MAP", spec_file)
 
         # Update file dictionary with FPET wave tables
 
         if fpet_found:
-            spec_file = f'{self.path}/calib/cr2res_cal_wave_tw_fpet.fits'
+            spec_file = f"{self.path}/calib/cr2res_cal_wave_tw_fpet.fits"
             self.update_files("CAL_WAVE_TW", spec_file)
 
-            spec_file = f'{self.path}/calib/cr2res_cal_wave_wave_map_fpet.fits'
+            spec_file = f"{self.path}/calib/cr2res_cal_wave_wave_map_fpet.fits"
             self.update_files("CAL_WAVE_MAP", spec_file)
 
         # Write updated dictionary to JSON file
@@ -805,7 +834,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Generate calibration lines")
+        self._print_section("Generate telluric table")
 
         # Create SOF file
 
@@ -813,7 +842,7 @@ class Pipeline:
 
         with open(self.sof_file, "w", encoding="utf-8") as sof_open:
             print("   - calib/sky_spec.dat EMISSION_LINES_TXT")
-            spec_file = f'{self.path}/calib/sky_spec.dat'
+            spec_file = f"{self.path}/calib/sky_spec.dat"
             sof_open.write(f"{spec_file} EMISSION_LINES_TXT\n")
 
         # Run EsoRex
@@ -837,7 +866,7 @@ class Pipeline:
 
         # Update file dictionary with sky spectrum
 
-        spec_file = f'{self.path}/calib/sky_spec.fits'
+        spec_file = f"{self.path}/calib/sky_spec.fits"
         self.update_files("EMISSION_LINES", spec_file)
 
         # Write updated dictionary to JSON file
@@ -930,7 +959,7 @@ class Pipeline:
         for item in self.header_data[indices]["DET.SEQ1.DIT"]:
             unique_dit.add(item)
 
-        print(f'Unique DIT values: {unique_dit}\n')
+        print(f"Unique DIT values: {unique_dit}\n")
 
         # Create SOF file
 
@@ -953,7 +982,7 @@ class Pipeline:
 
             for key in self.file_dict["CAL_FLAT_MASTER"]:
                 if not file_found:
-                    file_name = key.split('/')[-1]
+                    file_name = key.split("/")[-1]
                     print(f"   - calib/{file_name} CAL_FLAT_MASTER")
                     sof_open.write(f"{key} CAL_FLAT_MASTER\n")
                     file_found = True
@@ -967,14 +996,14 @@ class Pipeline:
 
             for key, value in self.file_dict["CAL_FLAT_TW"].items():
                 if not file_found:
-                    file_name = key.split('/')[-1]
+                    file_name = key.split("/")[-1]
                     print(f"   - calib/{file_name} CAL_FLAT_TW")
                     sof_open.write(f"{key} CAL_FLAT_TW\n")
                     file_found = True
 
             for key in self.file_dict["CAL_WAVE_TW"]:
                 if not file_found:
-                    file_name = key.split('/')[-1]
+                    file_name = key.split("/")[-1]
                     print(f"   - calib/{file_name} CAL_WAVE_TW")
                     sof_open.write(f"{key} CAL_WAVE_TW\n")
                     file_found = True
@@ -994,12 +1023,12 @@ class Pipeline:
             stdout = subprocess.DEVNULL
 
         if not verbose:
-            print('Running EsoRex...', end='', flush=True)
+            print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
 
         if not verbose:
-            print(' [DONE]')
+            print(" [DONE]")
 
         # Write updated dictionary to JSON file
 
@@ -1007,7 +1036,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def plot_spectra(self, nod_ab: str = 'A') -> None:
+    def plot_spectra(self, nod_ab: str = "A") -> None:
         """
         Method for plotting the extracted spectra.
 
@@ -1028,7 +1057,7 @@ class Pipeline:
 
         print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
 
-        print('Reading FITS...', end='', flush=True)
+        print("Reading FITS...", end="", flush=True)
 
         spec_data = []
 
@@ -1039,31 +1068,33 @@ class Pipeline:
             for item in hdu_list[1:]:
                 spec_data.append(item.data)
 
-        print(' [DONE]')
+        print(" [DONE]")
 
         n_chip = len(spec_data)
 
-        print('Plotting spectra...', end='', flush=True)
+        print("Plotting spectra...", end="", flush=True)
 
         for i, det_item in enumerate(spec_data):
             n_spec = len(det_item.columns) // n_chip
-            plt.figure(figsize=(8, n_spec*2))
+            plt.figure(figsize=(8, n_spec * 2))
 
             for j in range(n_spec):
-                plt.subplot(n_spec, 1, n_spec-j)
+                plt.subplot(n_spec, 1, n_spec - j)
 
-                wavel = det_item[f'0{j+2}_01_WL']
-                flux = det_item[f'0{j+2}_01_SPEC']
-                error = det_item[f'0{j+2}_01_ERR']
+                wavel = det_item[f"0{j+2}_01_WL"]
+                flux = det_item[f"0{j+2}_01_SPEC"]
+                error = det_item[f"0{j+2}_01_ERR"]
 
-                plt.plot(wavel, flux, '-', lw=0.8, color='tab:blue')
-                plt.fill_between(wavel, flux-error, flux-error, color='tab:blue', alpha=0.5)
-                plt.xlabel('Wavelength (nm)', fontsize=13)
-                plt.ylabel('Flux', fontsize=13)
+                plt.plot(wavel, flux, "-", lw=0.8, color="tab:blue")
+                plt.fill_between(
+                    wavel, flux - error, flux - error, color="tab:blue", alpha=0.5
+                )
+                plt.xlabel("Wavelength (nm)", fontsize=13)
+                plt.ylabel("Flux", fontsize=13)
                 plt.minorticks_on()
 
             plt.tight_layout()
             plt.savefig(f"{self.path}/product/spectra_{i+1}.png")
             plt.clf()
 
-        print(' [DONE]')
+        print(" [DONE]")
