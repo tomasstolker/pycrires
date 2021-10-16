@@ -24,7 +24,7 @@ Pipeline for reduction of high-resolution spectroscopy data from VLT/CRIRES+
 .. image:: https://img.shields.io/github/license/tomasstolker/pycrires
    :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
 
-``pycrires`` is a Python wrapper for running the CRIRES+ recipes of EsoRex. The pipeline is currently under development so should be used carefully.
+*pycrires* is a Python wrapper for running the CRIRES+ recipes of EsoRex.
 
 Documentation
 -------------

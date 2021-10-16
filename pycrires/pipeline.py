@@ -391,7 +391,7 @@ class Pipeline:
         sof_key : str
             SOF keyword for the file.
         file_name : str
-            Filename.
+            Absolute path of the file.
 
         Returns
         -------
@@ -476,7 +476,10 @@ class Pipeline:
         for item in self.header_data[indices]["DET.SEQ1.DIT"]:
             unique_dit.add(item)
 
-        print(f"Unique DIT values: {unique_dit}\n")
+        if len(unique_dit) == 0:
+            print("Unique DIT values: none")
+        else:
+            print(f"Unique DIT values: {unique_dit}\n")
 
         # Create SOF file
 
@@ -487,6 +490,12 @@ class Pipeline:
                 print(f"   - raw/{item} DARK")
                 sof_open.write(f"{self.path}/raw/{item} DARK\n")
                 self.update_files("DARK", f"{self.path}/raw/{item}")
+
+        # Check if any dark frames were found
+
+        if "DARK" not in self.file_dict:
+            raise RuntimeError("The \'raw\' folder does not contain "
+                               "any DPR.TYPE=DARK files.")
 
         # Run EsoRex
 
@@ -569,7 +578,12 @@ class Pipeline:
         for item in self.header_data[indices]["DET.SEQ1.DIT"]:
             unique_dit.add(item)
 
-        print(f"Unique DIT values: {unique_dit}\n")
+        if len(unique_dit) == 0:
+            print("Unique DIT values: none")
+        else:
+            print(f"Unique DIT values: {unique_dit}\n")
+
+        # Iterate over different DIT values for FLAT
 
         for dit_item in unique_dit:
             print(f"Creating SOF file for DIT={dit_item}:")
@@ -601,6 +615,8 @@ class Pipeline:
                 if not file_found:
                     warnings.warn(
                         f"There is not a master dark with DIT = {dit_item} s."
+                        f"For best results, please download a DPR.TYPE=DARK "
+                        f"from http://archive.eso.org/wdb/wdb/eso/crires/form."
                     )
 
                 # Find bad pixel map
@@ -688,9 +704,11 @@ class Pipeline:
 
             indices = self.header_data["DPR.TYPE"] == "WAVE,UNE"
 
+            une_found = False
+
             if sum(indices) == 0:
-                # warnings.warn("No WAVE,UNE file found.")
-                une_found = False
+                warnings.warn("The \'raw\' folder does not contain "
+                                   "any DPR.TYPE=WAVE,UNE file.")
 
             elif sum(indices) > 1:
                 raise RuntimeError(
@@ -708,19 +726,18 @@ class Pipeline:
                 sof_open.write(f"{file_path} WAVE_UNE\n")
                 self.update_files("WAVE_UNE", file_path)
 
-                # index = self.header_data.index[self.header_data["ORIGFILE"] == item][0]
-                # une_dit = self.header_data.iloc[index]["DET.SEQ1.DIT"]
-
             # Fabry Pérot Etalon (FPET) frames
 
             indices = self.header_data["DPR.TYPE"] == "WAVE,FPET"
+
+            fpet_found = False
 
             if sum(indices) == 0:
                 indices = self.header_data["OBJECT"] == "WAVE,FPET"
 
             if sum(indices) == 0:
-                # warnings.warn("No WAVE,FPET file found.")
-                fpet_found = False
+                warnings.warn("The \'raw\' folder does not contain "
+                                   "any DPR.TYPE=WAVE,FPET file.")
 
             elif sum(indices) > 1:
                 raise RuntimeError(
@@ -738,26 +755,33 @@ class Pipeline:
                 sof_open.write(f"{file_path} WAVE_FPET\n")
                 self.update_files("WAVE_FPET", file_path)
 
-                # index = self.header_data.index[self.header_data["ORIGFILE"] == item][0]
-                # fpet_dit = self.header_data.iloc[index]["DET.SEQ1.DIT"]
-
-            # Check if the DIT of WAVE,UNE and WAVE,FPET are the same
-
-            # if une_dit != fpet_dit:
-            #     raise RuntimeError(f'The DIT of WAVE,UNE ({une_dit}) '
-            #                        f'from the DIT of WAVE,FPET '
-            #                        f'({fpet_dit}).')
-
-            # Find trace wave table
+            # Find trace file
 
             file_found = False
 
-            for key in self.file_dict["CAL_FLAT_TW"]:
-                if not file_found:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_FLAT_TW")
-                    sof_open.write(f"{key} CAL_FLAT_TW\n")
-                    file_found = True
+            if "UTIL_TRACE_TW" in self.file_dict:
+                for key in self.file_dict["UTIL_TRACE_TW"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} UTIL_TRACE_TW")
+                        sof_open.write(f"{key} UTIL_TRACE_TW\n")
+                        file_found = True
+
+            if "CAL_WAVE_TW" in self.file_dict:
+                for key in self.file_dict["CAL_WAVE_TW"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_WAVE_TW")
+                        sof_open.write(f"{key} CAL_WAVE_TW\n")
+                        file_found = True
+
+            if "CAL_FLAT_TW" in self.file_dict:
+                for key, value in self.file_dict["CAL_FLAT_TW"].items():
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_FLAT_TW")
+                        sof_open.write(f"{key} CAL_FLAT_TW\n")
+                        file_found = True
 
             if not file_found:
                 raise RuntimeError("Could not find a trace wave table.")
@@ -766,12 +790,13 @@ class Pipeline:
 
             file_found = False
 
-            for key in self.file_dict["EMISSION_LINES"]:
-                if not file_found:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name}.fits EMISSION_LINES")
-                    sof_open.write(f"{key} EMISSION_LINES\n")
-                    file_found = True
+            if "EMISSION_LINES" in self.file_dict:
+                for key in self.file_dict["EMISSION_LINES"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name}.fits EMISSION_LINES")
+                        sof_open.write(f"{key} EMISSION_LINES\n")
+                        file_found = True
 
             if not file_found:
                 raise RuntimeError("Could not find an emission lines file.")
@@ -980,12 +1005,12 @@ class Pipeline:
 
             file_found = False
 
-            for key in self.file_dict["CAL_FLAT_MASTER"]:
-                if not file_found:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_FLAT_MASTER")
-                    sof_open.write(f"{key} CAL_FLAT_MASTER\n")
-                    file_found = True
+            # for key in self.file_dict["CAL_FLAT_MASTER"]:
+            #     if not file_found:
+            #         file_name = key.split("/")[-1]
+            #         print(f"   - calib/{file_name} CAL_FLAT_MASTER")
+            #         sof_open.write(f"{key} CAL_FLAT_MASTER\n")
+            #         file_found = True
 
             if not file_found:
                 warnings.warn("Could not find a master flat.")
@@ -994,19 +1019,29 @@ class Pipeline:
 
             file_found = False
 
-            for key, value in self.file_dict["CAL_FLAT_TW"].items():
-                if not file_found:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_FLAT_TW")
-                    sof_open.write(f"{key} CAL_FLAT_TW\n")
-                    file_found = True
+            if "UTIL_TRACE_TW" in self.file_dict:
+                for key in self.file_dict["UTIL_TRACE_TW"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} UTIL_TRACE_TW")
+                        sof_open.write(f"{key} UTIL_TRACE_TW\n")
+                        file_found = True
 
-            for key in self.file_dict["CAL_WAVE_TW"]:
-                if not file_found:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_WAVE_TW")
-                    sof_open.write(f"{key} CAL_WAVE_TW\n")
-                    file_found = True
+            if "CAL_WAVE_TW" in self.file_dict:
+                for key in self.file_dict["CAL_WAVE_TW"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_WAVE_TW")
+                        sof_open.write(f"{key} CAL_WAVE_TW\n")
+                        file_found = True
+
+            if "CAL_FLAT_TW" in self.file_dict:
+                for key, value in self.file_dict["CAL_FLAT_TW"].items():
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_FLAT_TW")
+                        sof_open.write(f"{key} CAL_FLAT_TW\n")
+                        file_found = True
 
             if not file_found:
                 warnings.warn("Could not find a trace file.")
