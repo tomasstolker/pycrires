@@ -5,6 +5,11 @@ docs/api
 docs/.ipynb_checkpoints/
 docs/header.csv
 docs/header.xlsx
+docs/calib/
+docs/product/
+docs/tmp/
+docs/raw/
+docs/files.json
 build/
 dist/
 pycrires.egg-info/
@@ -16,8 +21,7 @@ coverage.xml
 calib/
 product/
 tmp/
-docs/calib/
-docs/product/
-docs/tmp/
-docs/raw/
-docs/files.json
+tests/calib/
+tests/product/
+tests/tmp/
+tests/raw/

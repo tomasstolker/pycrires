@@ -35,8 +35,9 @@ class Pipeline:
         ----------
         path : str
             Path of the main reduction folder. The main folder should
-            contain a subfolder called ``raw`` where raw data from the
-            ESO archive are stored.
+            contain a subfolder called ``raw`` where the raw data
+            (both science and calibration) from the ESO archive are
+            stored.
 
         Returns
         -------
@@ -103,7 +104,7 @@ class Pipeline:
         if not os.path.exists(self.product_folder):
             os.makedirs(self.product_folder)
 
-        # Test if esorex is installed
+        # Test if EsoRex is installed
 
         if shutil.which("esorex") is None:
             warnings.warn(
@@ -113,7 +114,7 @@ class Pipeline:
             )
 
         else:
-            # Print the available esorex recipes from CRIRES+
+            # Print the available EsoRex recipes from CRIRES+
 
             esorex = ["esorex", "--recipes"]
 
@@ -122,7 +123,7 @@ class Pipeline:
             ) as proc:
                 output, _ = proc.communicate()
 
-            print("Available esorex recipes for CRIRES+:")
+            print("Available EsoRex recipes for CRIRES+:")
 
             for item in output.split("\n"):
                 if item.replace(" ", "")[:7] == "cr2res_":
@@ -260,6 +261,45 @@ class Pipeline:
         self.header_data = pd.read_csv(self.header_file)
 
     @typechecked
+    def _update_files(self, sof_key: str, file_name: str) -> None:
+        """
+        Internal method for updating the dictionary with file
+        names and related SOF keywords.
+
+        Parameters
+        ----------
+        sof_key : str
+            SOF keyword for the file.
+        file_name : str
+            Absolute path of the file.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        header = fits.getheader(file_name)
+
+        file_dict = {}
+
+        if "ESO DET SEQ1 DIT" in header:
+            file_dict["DIT"] = header["ESO DET SEQ1 DIT"]
+        else:
+            file_dict["DIT"] = None
+
+        if "ESO INS WLEN ID" in header:
+            file_dict["WLEN"] = header["ESO INS WLEN ID"]
+        else:
+            file_dict["WLEN"] = None
+
+        if sof_key in self.file_dict:
+            if file_name not in self.file_dict[sof_key]:
+                self.file_dict[sof_key][file_name] = file_dict
+        else:
+            self.file_dict[sof_key] = {file_name: file_dict}
+
+    @typechecked
     def rename_files(self) -> None:
         """
         Method for renaming the files from ``ARCFILE`` to ``ORIGFILE``.
@@ -382,44 +422,6 @@ class Pipeline:
         self._print_info()
 
     @typechecked
-    def update_files(self, sof_key: str, file_name: str) -> None:
-        """
-        Method for
-
-        Parameters
-        ----------
-        sof_key : str
-            SOF keyword for the file.
-        file_name : str
-            Absolute path of the file.
-
-        Returns
-        -------
-        NoneType
-            None
-        """
-
-        header = fits.getheader(file_name)
-
-        file_dict = {}
-
-        if "ESO DET SEQ1 DIT" in header:
-            file_dict["DIT"] = header["ESO DET SEQ1 DIT"]
-        else:
-            file_dict["DIT"] = None
-
-        if "ESO INS WLEN ID" in header:
-            file_dict["WLEN"] = header["ESO INS WLEN ID"]
-        else:
-            file_dict["WLEN"] = None
-
-        if sof_key in self.file_dict:
-            if file_name not in self.file_dict[sof_key]:
-                self.file_dict[sof_key][file_name] = file_dict
-        else:
-            self.file_dict[sof_key] = {file_name: file_dict}
-
-    @typechecked
     def run_skycalc(self) -> None:
         """
         Method for running the Python wrapper of SkyCalc
@@ -489,13 +491,14 @@ class Pipeline:
             for item in self.header_data[indices]["ORIGFILE"]:
                 print(f"   - raw/{item} DARK")
                 sof_open.write(f"{self.path}/raw/{item} DARK\n")
-                self.update_files("DARK", f"{self.path}/raw/{item}")
+                self._update_files("DARK", f"{self.path}/raw/{item}")
 
         # Check if any dark frames were found
 
         if "DARK" not in self.file_dict:
-            raise RuntimeError("The \'raw\' folder does not contain "
-                               "any DPR.TYPE=DARK files.")
+            raise RuntimeError(
+                "The 'raw' folder does not contain any DPR.TYPE=DARK files."
+            )
 
         # Run EsoRex
 
@@ -507,8 +510,6 @@ class Pipeline:
             stdout = None
         else:
             stdout = subprocess.DEVNULL
-
-        if not verbose:
             print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
@@ -523,14 +524,14 @@ class Pipeline:
         )
 
         for item in fits_files:
-            self.update_files("CAL_DARK_MASTER", str(item))
+            self._update_files("CAL_DARK_MASTER", str(item))
 
         # Update file dictionary with bad pixel map
 
         fits_files = pathlib.Path(self.path / "calib").glob("cr2res_cal_dark_*bpm.fits")
 
         for item in fits_files:
-            self.update_files("CAL_DARK_BPM", str(item))
+            self._update_files("CAL_DARK_BPM", str(item))
 
         # Write updated dictionary to JSON file
 
@@ -599,7 +600,7 @@ class Pipeline:
                         print(f"   - raw/{item} FLAT")
                         file_path = f"{self.path}/raw/{item}"
                         sof_open.write(f"{file_path} FLAT\n")
-                        self.update_files("FLAT", file_path)
+                        self._update_files("FLAT", file_path)
 
                 # Find master dark
 
@@ -645,8 +646,6 @@ class Pipeline:
                 stdout = None
             else:
                 stdout = subprocess.DEVNULL
-
-            if not verbose:
                 print("Running EsoRex...", end="", flush=True)
 
             subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
@@ -661,7 +660,7 @@ class Pipeline:
             )
 
             for item in fits_files:
-                self.update_files("CAL_FLAT_MASTER", str(item))
+                self._update_files("CAL_FLAT_MASTER", str(item))
 
             # Update file dictionary with trace wave table
 
@@ -670,7 +669,7 @@ class Pipeline:
             )
 
             for item in fits_files:
-                self.update_files("CAL_FLAT_TW", str(item))
+                self._update_files("CAL_FLAT_TW", str(item))
 
             # Write updated dictionary to JSON file
 
@@ -707,8 +706,9 @@ class Pipeline:
             une_found = False
 
             if sum(indices) == 0:
-                warnings.warn("The \'raw\' folder does not contain "
-                                   "any DPR.TYPE=WAVE,UNE file.")
+                warnings.warn(
+                    "The 'raw' folder does not contain a DPR.TYPE=WAVE,UNE file."
+                )
 
             elif sum(indices) > 1:
                 raise RuntimeError(
@@ -724,7 +724,7 @@ class Pipeline:
                 print(f"   - raw/{item} WAVE_UNE")
                 file_path = f"{self.path}/raw/{item}"
                 sof_open.write(f"{file_path} WAVE_UNE\n")
-                self.update_files("WAVE_UNE", file_path)
+                self._update_files("WAVE_UNE", file_path)
 
             # Fabry Pérot Etalon (FPET) frames
 
@@ -736,8 +736,9 @@ class Pipeline:
                 indices = self.header_data["OBJECT"] == "WAVE,FPET"
 
             if sum(indices) == 0:
-                warnings.warn("The \'raw\' folder does not contain "
-                                   "any DPR.TYPE=WAVE,FPET file.")
+                warnings.warn(
+                    "The 'raw' folder does not contain a DPR.TYPE=WAVE,FPET file."
+                )
 
             elif sum(indices) > 1:
                 raise RuntimeError(
@@ -753,7 +754,7 @@ class Pipeline:
                 print(f"   - raw/{item} WAVE_FPET")
                 file_path = f"{self.path}/raw/{item}"
                 sof_open.write(f"{file_path} WAVE_FPET\n")
-                self.update_files("WAVE_FPET", file_path)
+                self._update_files("WAVE_FPET", file_path)
 
             # Find trace file
 
@@ -776,7 +777,7 @@ class Pipeline:
                         file_found = True
 
             if "CAL_FLAT_TW" in self.file_dict:
-                for key, value in self.file_dict["CAL_FLAT_TW"].items():
+                for key in self.file_dict["CAL_FLAT_TW"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
                         print(f"   - calib/{file_name} CAL_FLAT_TW")
@@ -811,8 +812,6 @@ class Pipeline:
             stdout = None
         else:
             stdout = subprocess.DEVNULL
-
-        if not verbose:
             print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
@@ -824,19 +823,19 @@ class Pipeline:
 
         if une_found:
             spec_file = f"{self.path}/calib/cr2res_cal_wave_tw_une.fits"
-            self.update_files("CAL_WAVE_TW", spec_file)
+            self._update_files("CAL_WAVE_TW", spec_file)
 
             spec_file = f"{self.path}/calib/cr2res_cal_wave_wave_map_une.fits"
-            self.update_files("CAL_WAVE_MAP", spec_file)
+            self._update_files("CAL_WAVE_MAP", spec_file)
 
         # Update file dictionary with FPET wave tables
 
         if fpet_found:
             spec_file = f"{self.path}/calib/cr2res_cal_wave_tw_fpet.fits"
-            self.update_files("CAL_WAVE_TW", spec_file)
+            self._update_files("CAL_WAVE_TW", spec_file)
 
             spec_file = f"{self.path}/calib/cr2res_cal_wave_wave_map_fpet.fits"
-            self.update_files("CAL_WAVE_MAP", spec_file)
+            self._update_files("CAL_WAVE_MAP", spec_file)
 
         # Write updated dictionary to JSON file
 
@@ -880,8 +879,6 @@ class Pipeline:
             stdout = None
         else:
             stdout = subprocess.DEVNULL
-
-        if not verbose:
             print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
@@ -892,7 +889,7 @@ class Pipeline:
         # Update file dictionary with sky spectrum
 
         spec_file = f"{self.path}/calib/sky_spec.fits"
-        self.update_files("EMISSION_LINES", spec_file)
+        self._update_files("EMISSION_LINES", spec_file)
 
         # Write updated dictionary to JSON file
 
@@ -938,8 +935,6 @@ class Pipeline:
             stdout = None
         else:
             stdout = subprocess.DEVNULL
-
-        if not verbose:
             print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.calib_folder, stdout=stdout, check=True)
@@ -951,7 +946,7 @@ class Pipeline:
 
         for item in self.header_data[indices]["ORIGFILE"]:
             trace_file = f"{self.path}/calib/{item[:-5]}_tw.fits"
-            self.update_files("UTIL_TRACE_TW", trace_file)
+            self._update_files("UTIL_TRACE_TW", trace_file)
 
         # Write updated dictionary to JSON file
 
@@ -999,7 +994,7 @@ class Pipeline:
                     if header["ESO TPL ID"] == "CRIRES_spec_obs_AutoNodOnSlit":
                         print(f"   - raw/{item} CAL_NODDING_JITTER")
                         sof_open.write(f"{file_path} CAL_NODDING_JITTER\n")
-                        self.update_files("CAL_NODDING_JITTER", file_path)
+                        self._update_files("CAL_NODDING_JITTER", file_path)
 
             # Find master flat
 
@@ -1036,7 +1031,7 @@ class Pipeline:
                         file_found = True
 
             if "CAL_FLAT_TW" in self.file_dict:
-                for key, value in self.file_dict["CAL_FLAT_TW"].items():
+                for key in self.file_dict["CAL_FLAT_TW"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
                         print(f"   - calib/{file_name} CAL_FLAT_TW")
@@ -1056,8 +1051,6 @@ class Pipeline:
             stdout = None
         else:
             stdout = subprocess.DEVNULL
-
-        if not verbose:
             print("Running EsoRex...", end="", flush=True)
 
         subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
@@ -1092,7 +1085,7 @@ class Pipeline:
 
         print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
 
-        print("Reading FITS...", end="", flush=True)
+        print(f"Reading FITS of nod {nod_ab}...", end="", flush=True)
 
         spec_data = []
 
@@ -1129,7 +1122,30 @@ class Pipeline:
                 plt.minorticks_on()
 
             plt.tight_layout()
-            plt.savefig(f"{self.path}/product/spectra_{i+1}.png")
+            plt.savefig(f"{self.path}/product/spectra_{nod_ab}_{i+1}.png")
             plt.clf()
 
         print(" [DONE]")
+
+    @typechecked
+    def run_recipes(self) -> None:
+        """
+        Method for running the full chain of recipes.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self.rename_files()
+        self.extract_header()
+        self.cal_dark(verbose=False)
+        # self.cal_flat(verbose=False)
+        self.run_skycalc()
+        self.util_genlines(verbose=False)
+        self.util_trace(verbose=False)
+        self.cal_wave(verbose=False)
+        self.obs_nodding(verbose=False)
+        self.plot_spectra(nod_ab='A')
+        self.plot_spectra(nod_ab='B')

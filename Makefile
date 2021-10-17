@@ -53,3 +53,7 @@ clean:
 	rm -rf docs/tmp/
 	rm -rf docs/raw/
 	rm -f docs/files.json
+	rm -rf tests/calib/
+	rm -rf tests/product/
+	rm -rf tests/tmp/
+	rm -rf tests/raw/
