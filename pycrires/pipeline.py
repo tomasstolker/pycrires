@@ -17,6 +17,7 @@ import skycalc_ipy
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from matplotlib import pyplot as plt
+from scipy.ndimage.filters import gaussian_filter
 from typeguard import typechecked
 
 
@@ -422,10 +423,20 @@ class Pipeline:
         self._print_info()
 
     @typechecked
-    def run_skycalc(self) -> None:
+    def run_skycalc(self, pwv: float = 3.5) -> None:
         """
         Method for running the Python wrapper of SkyCalc
         (see https://skycalc-ipy.readthedocs.io).
+
+        Parameters
+        ----------
+        pwv : float
+            Precipitable water vapor (default: 3.5) that is used for
+            the telluric spectrum. This value will impact the depth
+            of the telluric transmission lines which can be seen
+            when plotting the spectra with
+            :meth:`~pycrires.pipeline.Pipeline.plot_spectra` and
+            setting ``telluric=True``.
 
         Returns
         -------
@@ -437,20 +448,111 @@ class Pipeline:
 
         temp_file = self.calib_folder / "skycalc_temp.fits"
 
-        print("Retrieving telluric spectrum with SkyCalc...", end="", flush=True)
+        # Setup SkyCalc object
+
+        print("SkyCalc settings:")
 
         sky_calc = skycalc_ipy.SkyCalc()
+
+        # Indices with SCIENCE frames
+        science_index = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+        mjd_start = self.header_data["MJD-OBS"][science_index[0]]
+        ra_mean = np.mean(self.header_data["RA"])
+        dec_mean = np.mean(self.header_data["DEC"])
+
+        sky_calc.get_almanac_data(
+            ra=ra_mean,
+            dec=dec_mean,
+            date=None,
+            mjd=mjd_start,
+            observatory="paranal",
+            update_values=True,
+        )
+
+        print(f"  - MJD = {mjd_start:.2f}")
+        print(f"  - RA (deg) = {ra_mean:.2f}")
+        print(f"  - Dec (deg) = {dec_mean:.2f}")
+
+        # See https://skycalc-ipy.readthedocs.io/en/latest/GettingStarted.html
+        sky_calc["msolflux"] = 130
+
+        if self.header_data["INS.WLEN.ID"][0][0] == "K":
+            sky_calc["wmin"] = 1900.0  # (nm)
+            sky_calc["wmax"] = 2500.0  # (nm)
+
+        else:
+            wlen_id = self.header_data["INS.WLEN.ID"][0]
+            raise NotImplementedError(
+                f"The wavelength range for {wlen_id} " f"is not yet implemented."
+            )
+
+        sky_calc["wgrid_mode"] = "fixed_spectral_resolution"
+        sky_calc["wres"] = 2e5
+        sky_calc["pwv"] = pwv
+
+        print(f"  - Wavelength range (nm) = {sky_calc['wmin']} - {sky_calc['wmax']}")
+        print(f"  - Sampling resolution = {sky_calc['wres']}")
+        print(f"  - Airmass = {sky_calc['airmass']:.2f}")
+        print(f"  - PWV (mm) = {sky_calc['pwv']}")
+
+        # Get telluric spectra from SkyCalc
+
+        print("Get telluric spectrum with SkyCalc...", end="", flush=True)
+
         sky_spec = sky_calc.get_sky_spectrum(filename=temp_file)
 
-        print(" [DONE]\n")
+        print(" [DONE]")
+
+        # Convolve spectra
+
+        slit_width = self.header_data["INS.SLIT1.NAME"][science_index[0]]
+
+        if slit_width == "w_0.2":
+            spec_res = 50000.0
+        elif slit_width == "w_0.4":
+            spec_res = 100000.0
+        else:
+            raise ValueError(f"Slit width {slit_width} not recognized.")
+
+        print(f"Slit width = {slit_width}")
+        print(f"Smoothing spectrum to R = {spec_res}\n")
+
+        sigma_lsf = 1.0 / spec_res / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+
+        spacing = np.mean(
+            2.0
+            * np.diff(sky_spec["lam"])
+            / (sky_spec["lam"][1:] + sky_spec["lam"][:-1])
+        )
+
+        sigma_lsf_gauss_filter = sigma_lsf / spacing
+
+        sky_spec["flux"] = gaussian_filter(
+            sky_spec["flux"], sigma=sigma_lsf_gauss_filter, mode="nearest"
+        )
+
+        sky_spec["trans"] = gaussian_filter(
+            sky_spec["trans"], sigma=sigma_lsf_gauss_filter, mode="nearest"
+        )
+
+        # Telluric emission spectrum
 
         emission_spec = np.column_stack(
             (1e3 * sky_spec["lam"], 1e-3 * sky_spec["flux"])
         )
         header = "Wavelength (nm) - Flux (ph arcsec-2 m-2 s-1 nm-1)"
 
-        print("Storing spectrum: calib/sky_spec.dat")
+        print("Storing emission spectrum: calib/sky_spec.dat")
         np.savetxt(self.calib_folder / "sky_spec.dat", emission_spec, header=header)
+
+        # Telluric transmission spectrum
+
+        transm_spec = np.column_stack((1e3 * sky_spec["lam"], 1e-3 * sky_spec["trans"]))
+        header = "Wavelength (nm) - Transmission"
+
+        print("Storing transmission spectrum: calib/transm_spec.dat")
+        np.savetxt(self.calib_folder / "transm_spec.dat", transm_spec, header=header)
 
     @typechecked
     def cal_dark(self, verbose: bool = True) -> None:
@@ -554,7 +656,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create master flat and detect traces")
+        self._print_section("Create master flat")
 
         indices = self.header_data["DPR.TYPE"] == "FLAT"
 
@@ -627,7 +729,7 @@ class Pipeline:
                 for key, value in self.file_dict["CAL_DARK_BPM"].items():
                     if not file_found and value["DIT"] == dit_item:
                         file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name}.fits CAL_DARK_BPM")
+                        print(f"   - calib/{file_name} CAL_DARK_BPM")
                         sof_open.write(f"{key} CAL_DARK_BPM\n")
                         file_found = True
 
@@ -662,7 +764,7 @@ class Pipeline:
             for item in fits_files:
                 self._update_files("CAL_FLAT_MASTER", str(item))
 
-            # Update file dictionary with trace wave table
+            # Update file dictionary with TraceWave table
 
             fits_files = pathlib.Path(self.path / "calib").glob(
                 "cr2res_cal_flat_*tw.fits"
@@ -756,7 +858,7 @@ class Pipeline:
                 sof_open.write(f"{file_path} WAVE_FPET\n")
                 self._update_files("WAVE_FPET", file_path)
 
-            # Find trace file
+            # Find TraceWave file
 
             file_found = False
 
@@ -785,7 +887,7 @@ class Pipeline:
                         file_found = True
 
             if not file_found:
-                raise RuntimeError("Could not find a trace wave table.")
+                raise RuntimeError("Could not find a TraceWave file.")
 
             # Find emission lines file
 
@@ -795,7 +897,7 @@ class Pipeline:
                 for key in self.file_dict["EMISSION_LINES"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name}.fits EMISSION_LINES")
+                        print(f"   - calib/{file_name} EMISSION_LINES")
                         sof_open.write(f"{key} EMISSION_LINES\n")
                         file_found = True
 
@@ -912,7 +1014,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Detect traces")
+        self._print_section("Trace the spectral orders")
 
         # Create SOF file
 
@@ -942,7 +1044,7 @@ class Pipeline:
         if not verbose:
             print(" [DONE]")
 
-        # Update file dictionary with trace wave table
+        # Update file dictionary with TraceWave table
 
         for item in self.header_data[indices]["ORIGFILE"]:
             trace_file = f"{self.path}/calib/{item[:-5]}_tw.fits"
@@ -1010,7 +1112,7 @@ class Pipeline:
             if not file_found:
                 warnings.warn("Could not find a master flat.")
 
-            # Find trace file
+            # Find TraceWave file
 
             file_found = False
 
@@ -1039,7 +1141,7 @@ class Pipeline:
                         file_found = True
 
             if not file_found:
-                warnings.warn("Could not find a trace file.")
+                warnings.warn("Could not find file with TraceWave table.")
 
         # Run EsoRex
 
@@ -1064,7 +1166,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def plot_spectra(self, nod_ab: str = "A") -> None:
+    def plot_spectra(self, nod_ab: str = "A", telluric: bool = True) -> None:
         """
         Method for plotting the extracted spectra.
 
@@ -1098,16 +1200,29 @@ class Pipeline:
 
         print(" [DONE]")
 
+        if telluric:
+            tel_wavel, tel_transm = np.loadtxt(
+                self.calib_folder / "transm_spec.dat", unpack=True
+            )
+            # tel_wavel, tel_transm = np.loadtxt(self.calib_folder / "sky_spec.dat", unpack=True)
+
         n_chip = len(spec_data)
 
         print("Plotting spectra...", end="", flush=True)
 
         for i, det_item in enumerate(spec_data):
             n_spec = len(det_item.columns) // n_chip
-            plt.figure(figsize=(8, n_spec * 2))
+
+            if telluric:
+                plt.figure(figsize=(8, n_spec * 3))
+            else:
+                plt.figure(figsize=(8, n_spec * 2))
 
             for j in range(n_spec):
-                plt.subplot(n_spec, 1, n_spec - j)
+                if telluric:
+                    plt.subplot(n_spec * 2, 1, n_spec * 2 - j * 2)
+                else:
+                    plt.subplot(n_spec, 1, n_spec - j)
 
                 wavel = det_item[f"0{j+2}_01_WL"]
                 flux = det_item[f"0{j+2}_01_SPEC"]
@@ -1120,6 +1235,15 @@ class Pipeline:
                 plt.xlabel("Wavelength (nm)", fontsize=13)
                 plt.ylabel("Flux", fontsize=13)
                 plt.minorticks_on()
+                xlim = plt.xlim()
+
+                if telluric:
+                    plt.subplot(n_spec * 2, 1, n_spec * 2 - j * 2 - 1)
+                    plt.plot(tel_wavel, tel_transm, "-", lw=0.8, color="tab:orange")
+                    plt.xlabel("Wavelength (nm)", fontsize=13)
+                    plt.ylabel(r"T$_\lambda$", fontsize=13)
+                    plt.xlim(xlim[0], xlim[1])
+                    plt.minorticks_on()
 
             plt.tight_layout()
             plt.savefig(f"{self.path}/product/spectra_{nod_ab}_{i+1}.png")
@@ -1147,5 +1271,5 @@ class Pipeline:
         self.util_trace(verbose=False)
         self.cal_wave(verbose=False)
         self.obs_nodding(verbose=False)
-        self.plot_spectra(nod_ab='A')
-        self.plot_spectra(nod_ab='B')
+        self.plot_spectra(nod_ab="A")
+        self.plot_spectra(nod_ab="B")

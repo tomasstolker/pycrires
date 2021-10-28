@@ -10,6 +10,7 @@ docs/product/
 docs/tmp/
 docs/raw/
 docs/files.json
+docs/skycalc_temp.fits
 build/
 dist/
 pycrires.egg-info/

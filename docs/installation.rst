@@ -3,7 +3,7 @@
 Installation
 ============
 
-``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.7/3.8/3.9 and is available in the `PyPI repository <https://pypi.org/project/pycrires/>`_ and on `Github <https://github.com/tomasstolker/pycrires>`_.
+``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.7/3.8/3.9 and is available from `PyPI repository <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
 
 Installation from PyPI
 ----------------------
@@ -26,11 +26,17 @@ Or, to update to the most recent version:
 Installation from Github
 ------------------------
 
+Using pip
+^^^^^^^^^
+
 Installation from `Github <https://github.com/tomasstolker/pycrires>`_ is also possible with ``pip``:
 
 .. code-block:: console
 
     $ pip install git+git://github.com:tomasstolker/pycrires.git
+
+Cloning the repository
+^^^^^^^^^^^^^^^^^^^^^^
 
 Alternatively, in case you want to look into the code, it is best to clone the repository:
 

@@ -37,6 +37,7 @@ clean:
 	rm -f coverage.xml
 	rm -f docs/header.csv
 	rm -f docs/header.xlsx
+	rm -f docs/skycalc_temp.fits
 	rm -rf docs/_build/
 	rm -rf docs/api/
 	rm -rf docs/.ipynb_checkpoints/
