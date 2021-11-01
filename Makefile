@@ -50,6 +50,7 @@ clean:
 	rm -rf product/
 	rm -rf tmp/
 	rm -rf docs/calib/
+	rm -rf docs/config/
 	rm -rf docs/product/
 	rm -rf docs/tmp/
 	rm -rf docs/raw/

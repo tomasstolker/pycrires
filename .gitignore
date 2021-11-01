@@ -6,6 +6,7 @@ docs/.ipynb_checkpoints/
 docs/header.csv
 docs/header.xlsx
 docs/calib/
+docs/config/
 docs/product/
 docs/tmp/
 docs/raw/
