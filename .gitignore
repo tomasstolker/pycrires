@@ -24,6 +24,10 @@ calib/
 product/
 tmp/
 tests/calib/
+tests/config/
 tests/product/
 tests/tmp/
 tests/raw/
+tests/files.json
+tests/header.csv
+tests/header.xlsx

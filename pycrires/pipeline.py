@@ -11,6 +11,8 @@ import subprocess
 import sys
 import warnings
 
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import skycalc_ipy
@@ -146,7 +148,10 @@ class Pipeline:
     @staticmethod
     @typechecked
     def _print_section(
-        sect_title: str, bound_char: str = "-", extra_line: bool = True
+        sect_title: str,
+        bound_char: str = "-",
+        extra_line: bool = True,
+        recipe_name: Optional[str] = None,
     ) -> None:
         """
         Internal method for printing a section title.
@@ -159,6 +164,8 @@ class Pipeline:
             Boundary character for around the section title.
         extra_line : bool
             Extra new line at the beginning.
+        recipe_name : str, None
+            Optional name of the `EsoRex` recipe that is used.
 
         Returns
         -------
@@ -173,6 +180,9 @@ class Pipeline:
 
         print(sect_title)
         print(len(sect_title) * bound_char + "\n")
+
+        if recipe_name is not None:
+            print(f"EsoRex recipe: {recipe_name}\n")
 
     @typechecked
     def _print_info(self) -> None:
@@ -329,7 +339,8 @@ class Pipeline:
     ) -> None:
         """
         Internal method for creating a configuration file with default
-        values for a specified `EsoRex` recipe.
+        values for a specified `EsoRex` recipe. Also check if `EsorRex`
+        is found and raise an error otherwise.
 
         Parameters
         ----------
@@ -347,6 +358,13 @@ class Pipeline:
         """
 
         config_file = self.config_folder / f"{pipeline_method}.rc"
+
+        if shutil.which("esorex") is None:
+            raise RuntimeError(
+                "Esorex is not accessible from the command line. "
+                "Please make sure that the ESO pipeline is correctly "
+                "installed and included in the PATH variable."
+            )
 
         if not os.path.exists(config_file):
             print()
@@ -387,12 +405,17 @@ class Pipeline:
                 print(" [DONE]")
 
     @typechecked
-    def _download_dark(self, dpr_type: str, det_dit: float):
+    def _download_archive(self, dpr_type: str, det_dit: Optional[float]):
         """
-        Internal method for downloading TODO
+        Internal method for downloading data from the ESO Science Archive.
 
         Parameters
         ----------
+        dpr_type : str
+            The ``DPR.TYPE`` of the data that should be downloaded.
+        det_dit : float, None
+            The detector integration time (DIT) in case
+            ``dpr_type="DARK"``. Can be set to ``None`` otherwise.
 
         Returns
         -------
@@ -400,19 +423,22 @@ class Pipeline:
             None
         """
 
+        if shutil.which("esorex") is None:
+            return
+
         while True:
-            if dpr_type in ["DARK"]:
+            if det_dit is None:
                 download = input(
-                    f"\nThere is not {dpr_type} data with DIT = "
-                    f"{det_dit} s. Try to download from the "
-                    f"ESO Science Archive Facility (y/n)? "
+                    f"Could not find data with DPR.TYPE={dpr_type}. "
+                    f"Try to download from the ESO Science Archive "
+                    f"Facility (y/n)? "
                 )
 
             else:
                 download = input(
-                    f"\nThere is data with DPR.TYPE={dpr_type}. Try "
-                    f"to download from the ESO Science Archive "
-                    f"Facility (y/n)? "
+                    f"There is not {dpr_type} data with DIT = "
+                    f"{det_dit} s. Try to download from the "
+                    f"ESO Science Archive Facility (y/n)? "
                 )
 
             if download in ["y", "n", "Y", "N"]:
@@ -427,14 +453,14 @@ class Pipeline:
             # Observing date
             date_obs = self.header_data["DATE-OBS"][indices[0]]
 
-            # Sequence of days before and after the observation
+            # Sequence of five days before and after the observation
             time_steps = [0.0, -1.0, 1.0, -2.0, 2, -3.0, 3.0, -4.0, 4.0, -5.0, 5.0]
             obs_time = time.Time(date_obs) + np.array(time_steps) * u.day
 
             # Login at ESO archive
 
             user_name = input(
-                "What is your username to login to the " "ESO User Portal Services? "
+                "What is your username to login to the ESO User Portal Services? "
             )
 
             eso = Eso()
@@ -448,9 +474,11 @@ class Pipeline:
                 column_filters = {
                     "night": obs_item.value[:10],
                     "dp_type": dpr_type,
-                    "det_dit": det_dit,
                     "ins_wlen_id": wlen_id,
                 }
+
+                if det_dit is not None:
+                    column_filters["det_dit"] = det_dit
 
                 # eso.query_instrument('crires', help=True)
                 table = eso.query_instrument("crires", column_filters=column_filters)
@@ -474,31 +502,31 @@ class Pipeline:
                     data_found = True
                     break
 
+            if data_found:
+                print(
+                    "\nThe requested data has been successfully downloaded. "
+                    "Please go to the folder with the raw data to uncompress "
+                    "any files ending with the .Z extension. Afterwards, "
+                    "please rerun the pipeline to ensure that the new "
+                    "calibration data is included."
+                )
+                sys.exit(0)
+
+            else:
+                warnings.warn(
+                    f"The requested data was not found in the ESO archive. "
+                    f"Please download the DPR.TYPE={dpr_type} data manually "
+                    "at http://archive.eso.org/wdb/wdb/eso/crires/form. "
+                    f"Continuing the data reduction without the {dpr_type} "
+                    f"data."
+                )
+
         else:
             warnings.warn(
                 f"For best results, please download the suggested "
                 f"DPR.TYPE={dpr_type} data from the ESO archive at "
                 f"http://archive.eso.org/wdb/wdb/eso/crires/form. "
                 f"Continuing without the {dpr_type} data now."
-            )
-
-        if data_found:
-            print(
-                "\nThe requested data has been successfully downloaded. "
-                "Please go to the folder with raw data to uncompress "
-                "any files ending with the .Z extension. Afterwards, "
-                "please rerun the pipeline method to continue the "
-                "data reduction."
-            )
-            sys.exit(0)
-
-        else:
-            warnings.warn(
-                f"The requested data was not found in the ESO archive. "
-                f"Please download the DPR.TYPE={dpr_type} data manually "
-                "at http://archive.eso.org/wdb/wdb/eso/crires/form. "
-                f"Continuing the data reduction without the {dpr_type} "
-                f"data."
             )
 
     @typechecked
@@ -992,7 +1020,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create master dark")
+        self._print_section("Create master dark", recipe_name="cr2res_cal_dark")
 
         indices = self.header_data["DPR.TYPE"] == "DARK"
 
@@ -1105,7 +1133,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create master flat")
+        self._print_section("Create master flat", recipe_name="cr2res_cal_flat")
 
         indices = self.header_data["DPR.TYPE"] == "FLAT"
 
@@ -1166,30 +1194,28 @@ class Pipeline:
 
                 file_found = False
 
-                for key, value in self.file_dict["CAL_DARK_MASTER"].items():
-                    if not file_found and value["DIT"] == dit_item:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DARK_MASTER")
-                        sof_open.write(f"{key} CAL_DARK_MASTER\n")
-                        file_found = True
+                if 'CAL_DARK_MASTER' in self.file_dict:
+                    for key, value in self.file_dict["CAL_DARK_MASTER"].items():
+                        if not file_found and value["DIT"] == dit_item:
+                            file_name = key.split("/")[-1]
+                            print(f"   - calib/{file_name} CAL_DARK_MASTER")
+                            sof_open.write(f"{key} CAL_DARK_MASTER\n")
+                            file_found = True
 
                 if not file_found:
-                    warnings.warn(
-                        f"There is not a master dark with DIT = {dit_item} s. "
-                        f"For best results, please download a DPR.TYPE=DARK "
-                        f"from http://archive.eso.org/wdb/wdb/eso/crires/form"
-                    )
+                    self._download_archive("DARK", dit_item)
 
                 # Find bad pixel map
 
                 file_found = False
 
-                for key, value in self.file_dict["CAL_DARK_BPM"].items():
-                    if not file_found and value["DIT"] == dit_item:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DARK_BPM")
-                        sof_open.write(f"{key} CAL_DARK_BPM\n")
-                        file_found = True
+                if 'CAL_DARK_BPM' in self.file_dict:
+                    for key, value in self.file_dict["CAL_DARK_BPM"].items():
+                        if not file_found and value["DIT"] == dit_item:
+                            file_name = key.split("/")[-1]
+                            print(f"   - calib/{file_name} CAL_DARK_BPM")
+                            sof_open.write(f"{key} CAL_DARK_BPM\n")
+                            file_found = True
 
                 if not file_found:
                     warnings.warn(
@@ -1268,7 +1294,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Wavelength calibration")
+        self._print_section("Wavelength calibration", recipe_name="cr2res_cal_wave")
 
         # Create output folder
 
@@ -1458,11 +1484,14 @@ class Pipeline:
         """
 
         if calib_type == "flat":
-            self._print_section("Create master flat")
+            self._print_section("Create master flat", recipe_name="cr2res_util_calib")
+
         elif calib_type == "une":
-            self._print_section("Create master UNE")
+            self._print_section("Create master UNE", recipe_name="cr2res_util_calib")
+
         elif calib_type == "fpet":
-            self._print_section("Create master FPET")
+            self._print_section("Create master FPET", recipe_name="cr2res_util_calib")
+
         else:
             raise RuntimeError("The argument of 'calib_type' is not recognized.")
 
@@ -1494,8 +1523,14 @@ class Pipeline:
         elif calib_type == "une":
             indices = self.header_data["DPR.TYPE"] == "WAVE,UNE"
 
+            if indices.sum() == 0:
+                self._download_archive("WAVE,UNE", None)
+
         elif calib_type == "fpet":
             indices = self.header_data["DPR.TYPE"] == "WAVE,FPET"
+
+            if indices.sum() == 0:
+                self._download_archive("WAVE,FPET", None)
 
         if indices.sum() == 0:
             raise RuntimeError(
@@ -1560,33 +1595,28 @@ class Pipeline:
 
             file_found = False
 
-            for key, value in self.file_dict["CAL_DARK_MASTER"].items():
-                if not file_found and value["DIT"] == dit_item:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_DARK_MASTER")
-                    sof_open.write(f"{key} CAL_DARK_MASTER\n")
-                    file_found = True
+            if 'CAL_DARK_MASTER' in self.file_dict:
+                for key, value in self.file_dict["CAL_DARK_MASTER"].items():
+                    if not file_found and value["DIT"] == dit_item:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_DARK_MASTER")
+                        sof_open.write(f"{key} CAL_DARK_MASTER\n")
+                        file_found = True
 
             if not file_found:
-                self._download_dark("DARK", dit_item)
-
-            if not file_found:
-                warnings.warn(
-                    f"There is not a master dark with DIT = {dit_item} s. "
-                    f"For best results, please download a DPR.TYPE=DARK "
-                    f"from http://archive.eso.org/wdb/wdb/eso/crires/form"
-                )
+                self._download_archive("DARK", dit_item)
 
             # Find bad pixel map
 
             file_found = False
 
-            for key, value in self.file_dict["CAL_DARK_BPM"].items():
-                if not file_found and value["DIT"] == dit_item:
-                    file_name = key.split("/")[-1]
-                    print(f"   - calib/{file_name} CAL_DARK_BPM")
-                    sof_open.write(f"{key} CAL_DARK_BPM\n")
-                    file_found = True
+            if 'CAL_DARK_BPM' in self.file_dict:
+                for key, value in self.file_dict["CAL_DARK_BPM"].items():
+                    if not file_found and value["DIT"] == dit_item:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_DARK_BPM")
+                        sof_open.write(f"{key} CAL_DARK_BPM\n")
+                        file_found = True
 
             if not file_found:
                 warnings.warn(f"There is not a bad pixel map with DIT = {dit_item} s.")
@@ -1700,7 +1730,9 @@ class Pipeline:
             None
         """
 
-        self._print_section("Trace the spectral orders")
+        self._print_section(
+            "Trace the spectral orders", recipe_name="cr2res_util_trace"
+        )
 
         # Create output folder
 
@@ -1817,7 +1849,9 @@ class Pipeline:
             None
         """
 
-        self._print_section("Compute slit curvature")
+        self._print_section(
+            "Compute slit curvature", recipe_name="cr2res_util_slit_curv"
+        )
 
         # Create output folder
 
@@ -1946,11 +1980,18 @@ class Pipeline:
         """
 
         if calib_type == "flat":
-            self._print_section("Extract blaze spectrum")
+            self._print_section(
+                "Extract blaze spectrum", recipe_name="cr2res_util_extract"
+            )
+
         elif calib_type == "une":
-            self._print_section("Extract UNE spectrum")
+            self._print_section(
+                "Extract UNE spectrum", recipe_name="cr2res_util_extract"
+            )
+
         elif calib_type == "fpet":
-            self._print_section("Extract FPET frame")
+            self._print_section("Extract FPET frame", recipe_name="cr2res_util_extract")
+
         else:
             raise RuntimeError("The argument of 'calib_type' is not recognized.")
 
@@ -2130,7 +2171,9 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create normalized flat field")
+        self._print_section(
+            "Create normalized flat field", recipe_name="cr2res_util_normflat"
+        )
 
         # Create output folder
 
@@ -2249,7 +2292,9 @@ class Pipeline:
             None
         """
 
-        self._print_section("Generate calibration lines")
+        self._print_section(
+            "Generate calibration lines", recipe_name="cr2res_util_genlines"
+        )
 
         # Create output folder
 
@@ -2369,9 +2414,15 @@ class Pipeline:
                     check_une = True
 
         if calib_type == "une" or not check_une:
-            self._print_section("Determine wavelength solution")
+            self._print_section(
+                "Determine wavelength solution", recipe_name="cr2res_util_wave"
+            )
+
         elif calib_type == "fpet":
-            self._print_section("Refine wavelength solution")
+            self._print_section(
+                "Refine wavelength solution", recipe_name="cr2res_util_wave"
+            )
+
         else:
             raise RuntimeError("The argument of 'calib_type' is not recognized.")
 
@@ -2404,7 +2455,7 @@ class Pipeline:
         else:
             raise RuntimeError(
                 "The EMISSION_LINES file is not found in "
-                "the 'calib/genlines' folder. Please first"
+                "the 'calib/genlines' folder. Please first "
                 "run the util_genlines method."
             )
 
@@ -2603,7 +2654,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Process nodding frames")
+        self._print_section("Process nodding frames", recipe_name="cr2res_obs_nodding")
 
         indices = self.header_data["DPR.CATG"] == "SCIENCE"
 
@@ -2644,7 +2695,9 @@ class Pipeline:
                 for key in self.file_dict["UTIL_MASTER_FLAT"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} UTIL_MASTER_FLAT")
+                        print(
+                            f"   - calib/util_calib_flat/{file_name} UTIL_MASTER_FLAT"
+                        )
                         sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
                         file_found = True
 
@@ -2652,7 +2705,7 @@ class Pipeline:
                 for key in self.file_dict["CAL_FLAT_MASTER"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_FLAT_MASTER")
+                        print(f"   - calib/cal_flat/{file_name} CAL_FLAT_MASTER")
                         sof_open.write(f"{key} CAL_FLAT_MASTER\n")
                         file_found = True
 
@@ -2667,7 +2720,7 @@ class Pipeline:
                 for key in self.file_dict["CAL_DARK_BPM"]:
                     if not file_found:
                         file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DARK_BPM")
+                        print(f"   - calib/cal_dark/{file_name} CAL_DARK_BPM")
                         sof_open.write(f"{key} CAL_DARK_BPM\n")
                         file_found = True
 
@@ -2801,13 +2854,10 @@ class Pipeline:
                 # Find all spectral orders
                 cp = np.sort([i[0:6] for i in data.dtype.names if "WL" in i])
 
-                for iord in range(len(cp)):  # loop on orders
+                # loop over orders
+                for item in cp:
                     # set up column name for WAVE SPEC and ERR
-                    cpw, cps, cpe = (
-                        cp[iord] + "WL",
-                        cp[iord] + "SPEC",
-                        cp[iord] + "ERR",
-                    )
+                    cpw, cps, cpe = (item + "WL", item + "SPEC", item + "ERR")
 
                     # isolate WAVE SPEC and ERR for given order/detector
                     w, s, e = (
@@ -2895,7 +2945,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Run Molecfit")
+        self._print_section("Run Molecfit", recipe_name="molecfit_model")
 
         # Create output folder
 
@@ -3113,14 +3163,13 @@ class Pipeline:
         self.util_normflat(verbose=False)
         self.util_calib(calib_type="une", verbose=False)
         self.util_extract(calib_type="une", verbose=False)
-        self.run_skycalc(pwv=1.0)
         self.util_genlines(verbose=False)
-        self.util_wave(calib_type="une", verbose=True)
+        self.util_wave(calib_type="une", verbose=False)
         self.util_calib(calib_type="fpet", verbose=False)
         self.util_extract(calib_type="fpet", verbose=False)
-        self.util_wave(calib_type="fpet", verbose=True)
+        self.util_wave(calib_type="fpet", verbose=False)
         self.obs_nodding(verbose=False)
+        self.run_skycalc(pwv=1.0)
         self.plot_spectra(nod_ab="A", telluric=True)
         self.plot_spectra(nod_ab="B", telluric=True)
         self.molecfit_input(nod_ab="A")
-        self.molecfit_model(nod_ab="A")

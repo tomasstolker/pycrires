@@ -35,27 +35,28 @@ clean:
 	find . -name '__pycache__' -exec rm -rf {} +
 	rm -f .coverage
 	rm -f coverage.xml
+	rm -rf build/
+	rm -rf dist/
+	rm -rf pycrires.egg-info/
+	rm -rf htmlcov/
+	rm -rf .tox/
+	rm -f docs/files.json
 	rm -f docs/header.csv
 	rm -f docs/header.xlsx
 	rm -f docs/skycalc_temp.fits
 	rm -rf docs/_build/
 	rm -rf docs/api/
 	rm -rf docs/.ipynb_checkpoints/
-	rm -rf build/
-	rm -rf dist/
-	rm -rf pycrires.egg-info/
-	rm -rf htmlcov/
-	rm -rf .tox/
-	rm -rf calib/
-	rm -rf product/
-	rm -rf tmp/
 	rm -rf docs/calib/
 	rm -rf docs/config/
 	rm -rf docs/product/
 	rm -rf docs/tmp/
 	rm -rf docs/raw/
-	rm -f docs/files.json
 	rm -rf tests/calib/
+	rm -rf tests/config/
 	rm -rf tests/product/
 	rm -rf tests/tmp/
 	rm -rf tests/raw/
+	rm -rf tests/files.json
+	rm -rf tests/header.csv
+	rm -rf tests/header.xlsx
