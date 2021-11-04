@@ -300,7 +300,7 @@ class Pipeline:
         Parameters
         ----------
         sof_key : str
-            Set Of Files (SOF) keyword for the file.
+            Set Of Files (SOF) keyword of ``file_name``.
         file_name : str
             Absolute path of the file.
 
@@ -309,6 +309,27 @@ class Pipeline:
         NoneType
             None
         """
+
+        # Print filename and SOF keyword
+
+        file_split = file_name.split("/")
+
+        if file_split[-2] == "raw":
+            file_print = file_split[-2] + "/" + file_split[-1]
+            print(f"   - {file_print} {sof_key}")
+
+        elif file_split[-3] == "calib":
+            file_print = file_split[-3] + "/" + file_split[-2] + "/" + file_split[-1]
+            print(f"   - {file_print} {sof_key}")
+
+        elif file_split[-2] == "product":
+            file_print = file_split[-2] + "/" + file_split[-1]
+            print(f"   - {file_print} {sof_key}")
+
+        else:
+            print(f"   - {file_name} {sof_key}")
+
+        # Get FITS header
 
         if file_name.endswith(".fits"):
             header = fits.getheader(file_name)
@@ -604,8 +625,8 @@ class Pipeline:
         Internal method for plotting the raw data of a specified ``DPR.CATG``
         together with the traces of the spectral orders. The content of this
         method has been adapted from the ``cr2res_show_trace_curv.py`` code
-        that is included with the EsoRex pipeline for CRIRES+ that is
-        available at https://www.eso.org/sci/software/pipelines/.
+        that is included with the EsoRex pipeline for CRIRES+ (see
+        https://www.eso.org/sci/software/pipelines/).
 
         Parameters
         ----------
@@ -1050,7 +1071,6 @@ class Pipeline:
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             for item in self.header_data[indices]["ORIGFILE"]:
-                print(f"   - raw/{item} DARK")
                 sof_open.write(f"{self.path}/raw/{item} DARK\n")
                 self._update_files("DARK", f"{self.path}/raw/{item}")
 
@@ -1088,9 +1108,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with master dark
+
+        print("Output files:")
 
         fits_files = pathlib.Path(self.path / "calib/cal_dark").glob(
             "cr2res_cal_dark_*master.fits"
@@ -1185,7 +1207,6 @@ class Pipeline:
                     flat_dit = self.header_data.iloc[index]["DET.SEQ1.DIT"]
 
                     if flat_dit == dit_item:
-                        print(f"   - raw/{item} FLAT")
                         file_path = f"{self.path}/raw/{item}"
                         sof_open.write(f"{file_path} FLAT\n")
                         self._update_files("FLAT", file_path)
@@ -1194,7 +1215,7 @@ class Pipeline:
 
                 file_found = False
 
-                if 'CAL_DARK_MASTER' in self.file_dict:
+                if "CAL_DARK_MASTER" in self.file_dict:
                     for key, value in self.file_dict["CAL_DARK_MASTER"].items():
                         if not file_found and value["DIT"] == dit_item:
                             file_name = key.split("/")[-1]
@@ -1209,7 +1230,7 @@ class Pipeline:
 
                 file_found = False
 
-                if 'CAL_DARK_BPM' in self.file_dict:
+                if "CAL_DARK_BPM" in self.file_dict:
                     for key, value in self.file_dict["CAL_DARK_BPM"].items():
                         if not file_found and value["DIT"] == dit_item:
                             file_name = key.split("/")[-1]
@@ -1249,9 +1270,11 @@ class Pipeline:
             subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
             if not verbose:
-                print(" [DONE]")
+                print(" [DONE]\n")
 
             # Update file dictionary with master flat
+
+            print("Output files:")
 
             fits_files = pathlib.Path(self.path / "calib").glob(
                 "cr2res_cal_flat_*master_flat.fits"
@@ -1277,6 +1300,117 @@ class Pipeline:
 
             with open(self.json_file, "w", encoding="utf-8") as json_file:
                 json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def cal_detlin(self, verbose: bool = True) -> None:
+        """
+        Method for running ``cr2res_cal_detlin``.
+
+        Parameters
+        ----------
+        verbose : bool
+            Print output produced by ``esorex``.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section(
+            "Determine detector linearity", recipe_name="cr2res_cal_detlin"
+        )
+
+        indices = self.header_data["DPR.TYPE"] == "FLAT,LAMP,DETCHECK"
+
+        # Create output folder
+
+        output_dir = self.calib_folder / "cal_detlin"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Check unique DIT
+
+        unique_dit = set()
+        for item in self.header_data[indices]["DET.SEQ1.DIT"]:
+            unique_dit.add(item)
+
+        if len(unique_dit) == 0:
+            print("Unique DIT values: none")
+        else:
+            print(f"Unique DIT values: {unique_dit}\n")
+
+        # Create SOF file
+
+        print("Creating SOF file:")
+
+        sof_file = pathlib.Path(output_dir / "files.sof")
+
+        with open(sof_file, "w", encoding="utf-8") as sof_open:
+            for item in self.header_data[indices]["ORIGFILE"]:
+                sof_open.write(f"{self.path}/raw/{item} DETLIN_LAMP\n")
+                self._update_files("DETLIN_LAMP", f"{self.path}/raw/{item}")
+
+        # Check if any dark frames were found
+
+        if "DETLIN_LAMP" not in self.file_dict:
+            raise RuntimeError(
+                "The 'raw' folder does not contain any "
+                "DPR.TYPE=FLAT,LAMP,DETCHECK files."
+            )
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("cr2res_cal_detlin", "cal_detlin", verbose)
+
+        # Run EsoRex
+
+        print()
+
+        config_file = self.config_folder / "cal_detlin.rc"
+
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "cr2res_cal_detlin",
+            sof_file,
+        ]
+
+        if verbose:
+            stdout = None
+        else:
+            stdout = subprocess.DEVNULL
+            print("Running EsoRex...", end="", flush=True)
+
+        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+        if not verbose:
+            print(" [DONE]\n")
+
+        # Update file dictionary with CAL_DETLIN_COEFFS file
+
+        print("Output files:")
+
+        fits_file = f"{output_dir}/cr2res_cal_detlin_coeffs.fits"
+
+        self._update_files("CAL_DETLIN_COEFFS", fits_file)
+
+        # Update file dictionary with CAL_DETLIN_BPM file
+
+        fits_file = f"{output_dir}/cr2res_cal_detlin_bpm.fits"
+
+        self._update_files("CAL_DETLIN_BPM", fits_file)
+
+        # Create plots
+
+        self._plot_image("CAL_DETLIN_BPM", "calib/cal_detlin")
+
+        # Write updated dictionary to JSON file
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def cal_wave(self, verbose: bool = True) -> None:
@@ -1332,7 +1466,6 @@ class Pipeline:
                 une_found = True
 
             for item in self.header_data[indices]["ORIGFILE"]:
-                print(f"   - raw/{item} WAVE_UNE")
                 file_path = f"{self.path}/raw/{item}"
                 sof_open.write(f"{file_path} WAVE_UNE\n")
                 self._update_files("WAVE_UNE", file_path)
@@ -1362,7 +1495,6 @@ class Pipeline:
                 fpet_found = True
 
             for item in self.header_data[indices]["ORIGFILE"]:
-                print(f"   - raw/{item} WAVE_FPET")
                 file_path = f"{self.path}/raw/{item}"
                 sof_open.write(f"{file_path} WAVE_FPET\n")
                 self._update_files("WAVE_FPET", file_path)
@@ -1440,9 +1572,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UNE wave tables
+
+        print("Output files:")
 
         if une_found:
             spec_file = f"{self.path}/calib/cal_wave/cr2res_cal_wave_tw_une.fits"
@@ -1577,17 +1711,14 @@ class Pipeline:
                     file_path = f"{self.path}/raw/{item}"
 
                     if calib_type == "flat":
-                        print(f"   - raw/{item} FLAT")
                         sof_open.write(f"{file_path} FLAT\n")
                         self._update_files("FLAT", file_path)
 
                     elif calib_type == "une":
-                        print(f"   - raw/{item} WAVE_UNE")
                         sof_open.write(f"{file_path} WAVE_UNE\n")
                         self._update_files("WAVE_UNE", file_path)
 
                     elif calib_type == "fpet":
-                        print(f"   - raw/{item} WAVE_FPET")
                         sof_open.write(f"{file_path} WAVE_FPET\n")
                         self._update_files("WAVE_FPET", file_path)
 
@@ -1595,7 +1726,7 @@ class Pipeline:
 
             file_found = False
 
-            if 'CAL_DARK_MASTER' in self.file_dict:
+            if "CAL_DARK_MASTER" in self.file_dict:
                 for key, value in self.file_dict["CAL_DARK_MASTER"].items():
                     if not file_found and value["DIT"] == dit_item:
                         file_name = key.split("/")[-1]
@@ -1610,7 +1741,7 @@ class Pipeline:
 
             file_found = False
 
-            if 'CAL_DARK_BPM' in self.file_dict:
+            if "CAL_DARK_BPM" in self.file_dict:
                 for key, value in self.file_dict["CAL_DARK_BPM"].items():
                     if not file_found and value["DIT"] == dit_item:
                         file_name = key.split("/")[-1]
@@ -1652,6 +1783,21 @@ class Pipeline:
                         "applying a master flat."
                     )
 
+            # Find CAL_DETLIN_COEFFS file
+
+            file_found = False
+
+            if "CAL_DETLIN_COEFFS" in self.file_dict:
+                for key, value in self.file_dict["CAL_DETLIN_COEFFS"].items():
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_DETLIN_COEFFS")
+                        sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
+                        file_found = True
+
+            if not file_found:
+                warnings.warn("Could not find CAL_DETLIN_COEFFS.")
+
         # Create EsoRex configuration file if not found
 
         self._create_config("cr2res_util_calib", "util_calib", verbose)
@@ -1692,9 +1838,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_CALIB file
+
+        print("Output files:")
 
         fits_file = (
             f"{self.path}/calib/util_calib_{calib_type}"
@@ -1803,9 +1951,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_TRACE_TW file
+
+        print("Output files:")
 
         if file_found:
             fits_file = (
@@ -1887,7 +2037,6 @@ class Pipeline:
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             for item in self.header_data[indices]["ORIGFILE"]:
-                print(f"   - raw/{item} WAVE_FPET")
                 file_path = f"{self.path}/raw/{item}"
                 sof_open.write(f"{file_path} WAVE_FPET\n")
                 self._update_files("WAVE_FPET", file_path)
@@ -1939,16 +2088,21 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_SLIT_CURV_TW file
 
-        fits_file = (
-            f"{self.path}/calib/util_slit_curv/"
-            + "cr2res_util_calib_calibrated_collapsed_tw_tw.fits"
-        )
+        print("Output files:")
+
+        fits_file = f"{output_dir}/cr2res_util_calib_calibrated_collapsed_tw_tw.fits"
 
         self._update_files("UTIL_SLIT_CURV_TW", fits_file)
+
+        # Update file dictionary with UTIL_SLIT_CURV_MAP file
+
+        fits_file = f"{output_dir}/cr2res_util_calib_calibrated_collapsed_tw_map.fits"
+
+        self._update_files("UTIL_SLIT_CURV_MAP", fits_file)
 
         # Create plots
 
@@ -2063,6 +2217,17 @@ class Pipeline:
 
         file_found = False
 
+        if "UTIL_WAVE_TW" in self.file_dict:
+            for key in self.file_dict["UTIL_WAVE_TW"]:
+                if not file_found and key.split("/")[-2] == "util_wave_une":
+                    with open(sof_file, "a", encoding="utf-8") as sof_open:
+                        file_name = key.split("/")[-1]
+                        print(
+                            f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW"
+                        )
+                        sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
+                        file_found = True
+
         if "UTIL_SLIT_CURV_TW" in self.file_dict:
             for key in self.file_dict["UTIL_SLIT_CURV_TW"]:
                 if not file_found:
@@ -2074,7 +2239,7 @@ class Pipeline:
                         sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                         file_found = True
 
-        else:
+        if not file_found:
             raise RuntimeError(
                 "The UTIL_SLIT_CURV_TW file is not found "
                 "in the 'calib' folder. Please first run "
@@ -2121,9 +2286,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_EXTRACT_1D file
+
+        print("Output files:")
 
         fits_file = (
             f"{self.path}/calib/util_extract_{calib_type}/"
@@ -2257,9 +2424,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_MASTER_FLAT file
+
+        print("Output files:")
 
         fits_file = f"{self.path}/calib/util_normflat/cr2res_util_normflat_Open_master_flat.fits"
         self._update_files("UTIL_MASTER_FLAT", fits_file)
@@ -2338,11 +2507,9 @@ class Pipeline:
         sof_file = pathlib.Path(self.path / "calib/util_genlines/files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
-            print(f"   - {line_file} EMISSION_LINES_TXT")
             sof_open.write(f"{line_file} EMISSION_LINES_TXT\n")
             self._update_files("EMISSION_LINES_TXT", line_file)
 
-            print(f"   - {range_file} LINES_SELECTION_TXT")
             sof_open.write(f"{range_file} LINES_SELECTION_TXT\n")
             self._update_files("LINES_SELECTION_TXT", range_file)
 
@@ -2373,13 +2540,26 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
-        # Update file dictionary with EMISSION_LINES file
+        # Update file dictionary with EMISSION_LINES files
 
-        fits_file = line_file.split("/")[-1].replace(".txt", ".fits")
-        full_path = pathlib.Path(self.path / f"calib/util_genlines/{fits_file}")
-        self._update_files("EMISSION_LINES", full_path.as_posix())
+        print("Output files:")
+
+        fits_file = (
+            str(output_dir) + "/" + line_file.split("/")[-1].replace(".txt", ".fits")
+        )
+        self._update_files("EMISSION_LINES", fits_file)
+
+        indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
+
+        fits_file = (
+            str(output_dir)
+            + "/"
+            + line_file.split("/")[-1].replace(".txt", f"_{wlen_id}.fits")
+        )
+        self._update_files("EMISSION_LINES", fits_file)
 
         # Write updated dictionary to JSON file
 
@@ -2443,21 +2623,23 @@ class Pipeline:
 
         file_found = False
 
-        if "EMISSION_LINES" in self.file_dict:
-            for key in self.file_dict["EMISSION_LINES"]:
-                if not file_found:
-                    with open(sof_file, "w", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/util_genlines/{file_name} EMISSION_LINES")
-                        sof_open.write(f"{key} EMISSION_LINES\n")
-                        file_found = True
+        if calib_type == "une":
 
-        else:
-            raise RuntimeError(
-                "The EMISSION_LINES file is not found in "
-                "the 'calib/genlines' folder. Please first "
-                "run the util_genlines method."
-            )
+            if "EMISSION_LINES" in self.file_dict:
+                for key in self.file_dict["EMISSION_LINES"]:
+                    if not file_found:
+                        with open(sof_file, "w", encoding="utf-8") as sof_open:
+                            file_name = key.split("/")[-1]
+                            print(f"   - calib/util_genlines/{file_name} EMISSION_LINES")
+                            sof_open.write(f"{key} EMISSION_LINES\n")
+                            file_found = True
+
+            else:
+                raise RuntimeError(
+                    "The EMISSION_LINES file is not found in "
+                    "the 'calib/genlines' folder. Please first "
+                    "run the util_genlines method."
+                )
 
         # Find UTIL_CALIB file
 
@@ -2595,9 +2777,11 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
 
         # Update file dictionary with UTIL_WAVE_TW file
+
+        print("Output files:")
 
         fits_file = (
             f"{self.path}/calib/util_wave_{calib_type}/"
@@ -2681,13 +2865,21 @@ class Pipeline:
                 file_path = f"{self.path}/raw/{item}"
                 header = fits.getheader(file_path)
 
-                if "ESO TPL ID" in header:
-                    if header["ESO TPL ID"] == "CRIRES_spec_obs_AutoNodOnSlit":
-                        print(f"   - raw/{item} CAL_NODDING_JITTER")
-                        sof_open.write(f"{file_path} CAL_NODDING_JITTER\n")
-                        self._update_files("CAL_NODDING_JITTER", file_path)
+                if "ESO DPR TECH" in header:
+                    if header["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
+                        sof_open.write(f"{file_path} OBS_NODDING_OTHER\n")
+                        self._update_files("OBS_NODDING_OTHER", file_path)
 
-            # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER
+                    elif header["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
+                        sof_open.write(f"{file_path} OBS_NODDING_JITTER\n")
+                        self._update_files("OBS_NODDING_JITTER", file_path)
+
+                else:
+                    raise RuntimeError(
+                        f"Could not find ESO.DPR.TECH in " f"the header of {item}."
+                    )
+
+            # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
 
             file_found = False
 
@@ -2764,6 +2956,21 @@ class Pipeline:
             if not file_found:
                 warnings.warn("Could not find file with TraceWave table.")
 
+            # Find CAL_DETLIN_COEFFS file
+
+            file_found = False
+
+            if "CAL_DETLIN_COEFFS" in self.file_dict:
+                for key in self.file_dict["CAL_DETLIN_COEFFS"]:
+                    if not file_found:
+                        file_name = key.split("/")[-1]
+                        print(f"   - calib/{file_name} CAL_DETLIN_COEFFS")
+                        sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
+                        file_found = True
+
+            if not file_found:
+                warnings.warn("Could not find CAL_DETLIN_COEFFS.")
+
         # Create EsoRex configuration file if not found
 
         self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
@@ -2791,7 +2998,38 @@ class Pipeline:
         subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]")
+            print(" [DONE]\n")
+
+        # Update file dictionary with output files
+
+        print("Output files:")
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_extractedA.fits"
+        self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_extractedB.fits"
+        self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_combinedA.fits"
+        self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_combinedB.fits"
+        self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_modelA.fits"
+        self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_modelB.fits"
+        self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_slitfuncA.fits"
+        self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
+
+        fits_file = self.product_folder / "cr2res_obs_nodding_slitfuncB.fits"
+        self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
+
+        # fits_file = self.product_folder / "cr2res_obs_nodding_throughput.fits"
+        # self._update_files("OBS_NODDING_THROUGHPUT", str(fits_file))
 
         # Write updated dictionary to JSON file
 
@@ -2804,8 +3042,8 @@ class Pipeline:
         Method for converting the output files with the extracted
         spectra into input files for `Molecfit`. The content of this
         method has been adapted from the ``cr2res_drs2molecfit.py``
-        code that is included with the EsoRex pipeline for CRIRES+ that
-        is available at https://www.eso.org/sci/software/pipelines/.
+        code that is included with the EsoRex pipeline for CRIRES+
+        (see https://www.eso.org/sci/software/pipelines/).
 
         Parameters
         ----------
@@ -2847,33 +3085,28 @@ class Pipeline:
             count = 1
 
             # Loop over 3 detectors
-            for idet in range(3):
+            for i_det in range(3):
                 # Get detector data
-                data = hdu_list[f"CHIP{idet+1}.INT1"].data
+                data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
                 # Find all spectral orders
-                cp = np.sort([i[0:6] for i in data.dtype.names if "WL" in i])
+                spec_ord = np.sort([i[0:6] for i in data.dtype.names if "WL" in i])
 
                 # loop over orders
-                for item in cp:
-                    # set up column name for WAVE SPEC and ERR
-                    cpw, cps, cpe = (item + "WL", item + "SPEC", item + "ERR")
-
-                    # isolate WAVE SPEC and ERR for given order/detector
-                    w, s, e = (
-                        hdu_list[f"CHIP{idet+1}.INT1"].data[cpw],
-                        hdu_list[f"CHIP{idet+1}.INT1"].data[cps],
-                        hdu_list[1].data[cpe],
-                    )
+                for item in spec_ord:
+                    # isolate WAVE, SPEC, and ERR for given order/detector
+                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "WL"]
+                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "SPEC"]
+                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "ERR"]
 
                     # create fits column for WAVE
-                    col1 = fits.Column(name="WAVE", format="D", array=w)
+                    col1 = fits.Column(name="WAVE", format="D", array=wavel)
 
                     # create fits column for SPEC
-                    col2 = fits.Column(name="SPEC", format="D", array=s)
+                    col2 = fits.Column(name="SPEC", format="D", array=spec)
 
                     # create fits column for ERR
-                    col3 = fits.Column(name="ERR", format="D", array=e)
+                    col3 = fits.Column(name="ERR", format="D", array=err)
 
                     # create fits table HDU with WAVE SPEC ERR
                     table_hdu = fits.BinTableHDU.from_columns([col1, col2, col3])
@@ -2882,10 +3115,10 @@ class Pipeline:
                     hdul_output.append(table_hdu)
 
                     # append wmin for given order to wmin array and convert to micron
-                    wmin.append(np.min(w) * 0.001)
+                    wmin.append(np.min(wavel) * 0.001)
 
                     # append wmax for giver order to wmax array and convert to micron
-                    wmax.append(np.max(w) * 0.001)
+                    wmax.append(np.max(wavel) * 0.001)
 
                     # append order counter to map2chip
                     map2chip.append(count)

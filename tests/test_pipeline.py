@@ -213,10 +213,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_wave(calib_type="fpet", verbose=False)
 
-            assert str(error.value) == "The EMISSION_LINES file is not " \
-                                       "found in the 'calib/genlines' " \
-                                       "folder. Please first run the " \
-                                       "util_genlines method."
+            assert str(error.value) == "The UTIL_EXTRACT_1D file is not " \
+                                       "found in the 'calib/" \
+                                       "util_extract_fpet' folder. Please " \
+                                       "first run the util_extract method " \
+                                       "with calib_type='une'."
 
         else:
             self.pipeline.util_wave(calib_type="fpet", verbose=False)
