@@ -130,7 +130,7 @@ class Pipeline:
             )
 
         else:
-            # Print the available EsoRex recipes from CRIRES+
+            # Print the available recipes for CRIRES+ and Molecfit
 
             esorex = ["esorex", "--recipes"]
 
@@ -139,10 +139,16 @@ class Pipeline:
             ) as proc:
                 output, _ = proc.communicate()
 
-            print("Available EsoRex recipes for CRIRES+:")
+            print("\nAvailable EsoRex recipes for CRIRES+:")
 
             for item in output.split("\n"):
                 if item.replace(" ", "")[:7] == "cr2res_":
+                    print(f"   -{item}")
+
+            print("\nAvailable EsoRex recipes for Molecfit:")
+
+            for item in output.split("\n"):
+                if item.replace(" ", "")[:9] == "molecfit_":
                     print(f"   -{item}")
 
     @staticmethod
@@ -292,15 +298,15 @@ class Pipeline:
         self.header_data = pd.read_csv(self.header_file)
 
     @typechecked
-    def _update_files(self, sof_key: str, file_name: str) -> None:
+    def _update_files(self, sof_tag: str, file_name: str) -> None:
         """
         Internal method for updating the dictionary with file
-        names and related Set Of Files (SOF) keywords.
+        names and related tag names for the set of files (SOF).
 
         Parameters
         ----------
-        sof_key : str
-            Set Of Files (SOF) keyword of ``file_name``.
+        sof_tag : str
+            Tag name of ``file_name`` for the set of files (SOF).
         file_name : str
             Absolute path of the file.
 
@@ -310,24 +316,24 @@ class Pipeline:
             None
         """
 
-        # Print filename and SOF keyword
+        # Print filename and SOF tag
 
         file_split = file_name.split("/")
 
         if file_split[-2] == "raw":
             file_print = file_split[-2] + "/" + file_split[-1]
-            print(f"   - {file_print} {sof_key}")
+            print(f"   - {file_print} {sof_tag}")
 
         elif file_split[-3] == "calib":
             file_print = file_split[-3] + "/" + file_split[-2] + "/" + file_split[-1]
-            print(f"   - {file_print} {sof_key}")
+            print(f"   - {file_print} {sof_tag}")
 
         elif file_split[-2] == "product":
             file_print = file_split[-2] + "/" + file_split[-1]
-            print(f"   - {file_print} {sof_key}")
+            print(f"   - {file_print} {sof_tag}")
 
         else:
-            print(f"   - {file_name} {sof_key}")
+            print(f"   - {file_name} {sof_tag}")
 
         # Get FITS header
 
@@ -348,11 +354,11 @@ class Pipeline:
         else:
             file_dict["WLEN"] = None
 
-        if sof_key in self.file_dict:
-            if file_name not in self.file_dict[sof_key]:
-                self.file_dict[sof_key][file_name] = file_dict
+        if sof_tag in self.file_dict:
+            if file_name not in self.file_dict[sof_tag]:
+                self.file_dict[sof_tag][file_name] = file_dict
         else:
-            self.file_dict[sof_key] = {file_name: file_dict}
+            self.file_dict[sof_tag] = {file_name: file_dict}
 
     @typechecked
     def _create_config(
@@ -405,22 +411,171 @@ class Pipeline:
 
             subprocess.run(esorex, cwd=self.config_folder, stdout=stdout, check=True)
 
-            if eso_recipe == "molecfit_model":
-                with open(config_file, "r", encoding="utf-8") as open_config:
-                    rc_lines = open_config.read().splitlines()
+            # Open config file and adjust some parameters
 
-                rc_lines[32] = "USE_INPUT_KERNEL=FALSE"
-                rc_lines[50] = "LIST_MOLEC=H2O,CO2,O3,CO"
-                rc_lines[63] = "FIT_MOLEC=1,1,1,1"
-                rc_lines[78] = "REL_COL=1.0,1.0,1.0,1.0"
-                rc_lines[93] = "WAVE_INCLUDE=0.5,5.0"
-                rc_lines[147] = "COLUMN_LAMBDA=WAVE"
-                rc_lines[151] = "COLUMN_FLUX=SPEC"
-                rc_lines[155] = "COLUMN_DFLUX=ERR"
-                rc_lines[169] = "WLG_TO_MICRON=0.001"
+            with open(config_file, "r", encoding="utf-8") as open_config:
+                config_text = open_config.read()
 
-                with open(config_file, "w", encoding="utf-8") as open_config:
-                    open_config.write("\n".join(rc_lines))
+            if eso_recipe == "cr2res_util_calib":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_util_calib.collapse=NONE",
+                    "cr2res.cr2res_util_calib.collapse=MEAN",
+                )
+
+                if pipeline_method == "util_calib_une":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_calib.subtract_nolight_rows=FALSE",
+                        "cr2res.cr2res_util_calib.subtract_nolight_rows=TRUE",
+                    )
+
+            elif eso_recipe == "cr2res_util_extract":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_util_extract.smooth_slit=2.0",
+                    "cr2res.cr2res_util_extract.smooth_slit=3.0",
+                )
+
+                if pipeline_method == "util_extract_flat":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_extract.smooth_spec=0.0",
+                        "cr2res.cr2res_util_extract.smooth_spec=2.0e-7",
+                    )
+
+            elif eso_recipe == "cr2res_util_wave":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_util_wave.fallback_input_wavecal=FALSE",
+                    "cr2res.cr2res_util_wave.fallback_input_wavecal=TRUE",
+                )
+
+                if pipeline_method == "util_wave_une":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_wave.wl_method=UNSPECIFIED",
+                        "cr2res.cr2res_util_wave.wl_method=XCORR",
+                    )
+
+                elif pipeline_method == "util_wave_fpet":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_wave.wl_method=UNSPECIFIED",
+                        "cr2res.cr2res_util_wave.wl_method=ETALON",
+                    )
+
+            elif eso_recipe == "molecfit_model":
+                config_text = config_text.replace(
+                    "USE_INPUT_KERNEL=TRUE",
+                    "USE_INPUT_KERNEL=FALSE",
+                )
+
+                # indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+                # wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
+
+                config_text = config_text.replace(
+                    "LIST_MOLEC=NULL",
+                    "LIST_MOLEC=H2O,CO2,CO,CH4,O2",
+                )
+
+                config_text = config_text.replace(
+                    "FIT_MOLEC=NULL",
+                    "FIT_MOLEC=1,1,1,1,1",
+                )
+
+                config_text = config_text.replace(
+                    "REL_COL=NULL",
+                    "REL_COL=1.0,1.0,1.0,1.0,1.0",
+                )
+
+                config_text = config_text.replace(
+                    "MAP_REGIONS_TO_CHIP=1",
+                    "MAP_REGIONS_TO_CHIP=NULL",
+                )
+
+                config_text = config_text.replace(
+                    "COLUMN_LAMBDA=lambda",
+                    "COLUMN_LAMBDA=WAVE",
+                )
+
+                config_text = config_text.replace(
+                    "COLUMN_FLUX=flux",
+                    "COLUMN_FLUX=SPEC",
+                )
+
+                config_text = config_text.replace(
+                    "COLUMN_DFLUX=NULL",
+                    "COLUMN_DFLUX=ERR",
+                )
+
+                config_text = config_text.replace(
+                    "PIX_SCALE_VALUE=0.086",
+                    "PIX_SCALE_VALUE=0.059",
+                )
+
+                config_text = config_text.replace(
+                    "FTOL=1e-10",
+                    "FTOL=1e-2",
+                )
+
+                config_text = config_text.replace(
+                    "XTOL=1e-10",
+                    "XTOL=1e-2",
+                )
+
+                config_text = config_text.replace(
+                    "CHIP_EXTENSIONS=FALSE",
+                    "CHIP_EXTENSIONS=TRUE",
+                )
+
+                config_text = config_text.replace(
+                    "FIT_WLC=0",
+                    "FIT_WLC=1",
+                )
+
+                config_text = config_text.replace(
+                    "WLC_N=1",
+                    "WLC_N=0",
+                )
+
+                config_text = config_text.replace(
+                    "WLC_CONST=-0.05",
+                    "WLC_CONST=0.0",
+                )
+
+                # config_text = config_text.replace(
+                #     "FIT_RES_LORENTZ=TRUE",
+                #     "FIT_RES_LORENTZ=FALSE",
+                # )
+
+                config_text = config_text.replace(
+                    "VARKERN=FALSE",
+                    "VARKERN=TRUE",
+                )
+
+                config_text = config_text.replace(
+                    "CONTINUUM_N=0",
+                    "CONTINUUM_N=1",
+                )
+
+                config_text = config_text.replace(
+                    "CONTINUUM_CONST=1.0",
+                    "CONTINUUM_CONST=1000.0",
+                )
+
+            elif eso_recipe == "molecfit_calctrans":
+                config_text = config_text.replace(
+                    "USE_INPUT_KERNEL=TRUE",
+                    "USE_INPUT_KERNEL=FALSE",
+                )
+
+                config_text = config_text.replace(
+                    "CHIP_EXTENSIONS=FALSE",
+                    "CHIP_EXTENSIONS=TRUE",
+                )
+
+            elif eso_recipe == "molecfit_correct":
+                config_text = config_text.replace(
+                    "CHIP_EXTENSIONS=FALSE",
+                    "CHIP_EXTENSIONS=TRUE",
+                )
+
+            with open(config_file, "w", encoding="utf-8") as open_config:
+                open_config.write(config_text)
 
             if not verbose:
                 print(" [DONE]")
@@ -428,7 +583,8 @@ class Pipeline:
     @typechecked
     def _download_archive(self, dpr_type: str, det_dit: Optional[float]):
         """
-        Internal method for downloading data from the ESO Science Archive.
+        Internal method for downloading data from the ESO Science
+        Archive.
 
         Parameters
         ----------
@@ -622,10 +778,11 @@ class Pipeline:
     @typechecked
     def _plot_trace(self, dpr_catg: str):
         """
-        Internal method for plotting the raw data of a specified ``DPR.CATG``
-        together with the traces of the spectral orders. The content of this
-        method has been adapted from the ``cr2res_show_trace_curv.py`` code
-        that is included with the EsoRex pipeline for CRIRES+ (see
+        Internal method for plotting the raw data of a specified
+        ``DPR.CATG`` together with the traces of the spectral orders.
+        The content of this method has been adapted from the
+        ``cr2res_show_trace_curv.py`` code that is included with the
+        EsoRex pipeline for CRIRES+ (see
         https://www.eso.org/sci/software/pipelines/).
 
         Parameters
@@ -1041,7 +1198,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create master dark", recipe_name="cr2res_cal_dark")
+        self._print_section("Create master DARK", recipe_name="cr2res_cal_dark")
 
         indices = self.header_data["DPR.TYPE"] == "DARK"
 
@@ -1155,7 +1312,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Create master flat", recipe_name="cr2res_cal_flat")
+        self._print_section("Create master FLAT", recipe_name="cr2res_cal_flat")
 
         indices = self.header_data["DPR.TYPE"] == "FLAT"
 
@@ -1618,7 +1775,7 @@ class Pipeline:
         """
 
         if calib_type == "flat":
-            self._print_section("Create master flat", recipe_name="cr2res_util_calib")
+            self._print_section("Create master FLAT", recipe_name="cr2res_util_calib")
 
         elif calib_type == "une":
             self._print_section("Create master UNE", recipe_name="cr2res_util_calib")
@@ -1800,34 +1957,21 @@ class Pipeline:
 
         # Create EsoRex configuration file if not found
 
-        self._create_config("cr2res_util_calib", "util_calib", verbose)
+        self._create_config("cr2res_util_calib", f"util_calib_{calib_type}", verbose)
 
         # Run EsoRex
 
         print()
 
-        config_file = self.config_folder / "util_calib.rc"
+        config_file = self.config_folder / f"util_calib_{calib_type}.rc"
 
-        if calib_type in ["flat", "fpet"]:
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_calib",
-                "--collapse=MEAN",
-                sof_file,
-            ]
-
-        elif calib_type == "une":
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_calib",
-                "--collapse=MEAN",
-                "--subtract_nolight_rows=TRUE",
-                sof_file,
-            ]
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "cr2res_util_calib",
+            sof_file,
+        ]
 
         if verbose:
             stdout = None
@@ -2135,7 +2279,7 @@ class Pipeline:
 
         if calib_type == "flat":
             self._print_section(
-                "Extract blaze spectrum", recipe_name="cr2res_util_extract"
+                "Extract FLAT spectrum", recipe_name="cr2res_util_extract"
             )
 
         elif calib_type == "une":
@@ -2144,7 +2288,9 @@ class Pipeline:
             )
 
         elif calib_type == "fpet":
-            self._print_section("Extract FPET frame", recipe_name="cr2res_util_extract")
+            self._print_section(
+                "Extract FPET spectrum", recipe_name="cr2res_util_extract"
+            )
 
         else:
             raise RuntimeError("The argument of 'calib_type' is not recognized.")
@@ -2222,9 +2368,7 @@ class Pipeline:
                 if not file_found and key.split("/")[-2] == "util_wave_une":
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
                         file_name = key.split("/")[-1]
-                        print(
-                            f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW"
-                        )
+                        print(f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW")
                         sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                         file_found = True
 
@@ -2248,34 +2392,23 @@ class Pipeline:
 
         # Create EsoRex configuration file if not found
 
-        self._create_config("cr2res_util_extract", "util_extract", verbose)
+        self._create_config(
+            "cr2res_util_extract", f"util_extract_{calib_type}", verbose
+        )
 
         # Run EsoRex
 
         print()
 
-        config_file = self.config_folder / "util_extract.rc"
+        config_file = self.config_folder / f"util_extract_{calib_type}.rc"
 
-        if calib_type == "flat":
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_extract",
-                "--smooth_slit=3",
-                "-smooth_spec=2.0e-7",
-                sof_file,
-            ]
-
-        else:
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_extract",
-                "--smooth_slit=3",
-                sof_file,
-            ]
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "cr2res_util_extract",
+            sof_file,
+        ]
 
         if verbose:
             stdout = None
@@ -2478,7 +2611,9 @@ class Pipeline:
 
         code_dir = os.path.dirname(os.path.realpath(__file__))
 
-        wavel_set = self.header_data["INS.WLEN.ID"][0]
+        indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+        wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
 
         if wavel_set[0] in ["Y", "J"]:
             line_file = code_dir + "/calib_data/lines_u_sarmiento.txt"
@@ -2567,7 +2702,13 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_wave(self, calib_type: str, verbose: bool = True) -> None:
+    def util_wave(
+        self,
+        calib_type: str,
+        poly_deg: int = 0,
+        wl_err: float = 0.1,
+        verbose: bool = True,
+    ) -> None:
         """
         Method for running ``cr2res_util_wave``.
 
@@ -2575,6 +2716,10 @@ class Pipeline:
         ----------
         calib_type : str
             Calibration type ("une" or "fpet").
+        poly_deg : int
+            Polynomial degree for fitting the wavelength solution.
+        wl_err : float
+            Estimate wavelength error (in nm).
         verbose : bool
             Print output produced by ``esorex``.
 
@@ -2584,16 +2729,7 @@ class Pipeline:
             None
         """
 
-        # Check if the wavelength solution was already determined with UNE
-
-        check_une = False
-
-        if "UTIL_WAVE_TW" in self.file_dict:
-            for key in self.file_dict["UTIL_WAVE_TW"]:
-                if key.split("/")[-2] == "util_wave_une":
-                    check_une = True
-
-        if calib_type == "une" or not check_une:
+        if calib_type == "une":
             self._print_section(
                 "Determine wavelength solution", recipe_name="cr2res_util_wave"
             )
@@ -2630,7 +2766,9 @@ class Pipeline:
                     if not file_found:
                         with open(sof_file, "w", encoding="utf-8") as sof_open:
                             file_name = key.split("/")[-1]
-                            print(f"   - calib/util_genlines/{file_name} EMISSION_LINES")
+                            print(
+                                f"   - calib/util_genlines/{file_name} EMISSION_LINES"
+                            )
                             sof_open.write(f"{key} EMISSION_LINES\n")
                             file_found = True
 
@@ -2676,8 +2814,19 @@ class Pipeline:
 
         # Find UTIL_SLIT_CURV_TW file
 
-        if calib_type == "une" or not check_une:
+        if calib_type == "une":
             file_found = False
+
+            if "UTIL_WAVE_TW" in self.file_dict and poly_deg > 0:
+                for key in self.file_dict["UTIL_WAVE_TW"]:
+                    if not file_found and key.split("/")[-2] == "util_wave_une":
+                        with open(sof_file, "a", encoding="utf-8") as sof_open:
+                            file_name = key.split("/")[-1]
+                            print(
+                                f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW"
+                            )
+                            sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
+                            file_found = True
 
             if "UTIL_SLIT_CURV_TW" in self.file_dict:
                 for key in self.file_dict["UTIL_SLIT_CURV_TW"]:
@@ -2690,7 +2839,7 @@ class Pipeline:
                             sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                             file_found = True
 
-            else:
+            if not file_found:
                 raise RuntimeError(
                     "The UTIL_SLIT_CURV_TW file is not found "
                     "in the 'calib/util_slit_curv' folder. "
@@ -2699,7 +2848,7 @@ class Pipeline:
 
         # Find UTIL_WAVE_TW file
 
-        if calib_type == "fpet" and check_une:
+        if calib_type == "fpet":
             file_found = False
 
             if "UTIL_WAVE_TW" in self.file_dict:
@@ -2720,53 +2869,35 @@ class Pipeline:
 
         # Create EsoRex configuration file if not found
 
-        self._create_config("cr2res_util_wave", "util_wave", verbose)
+        self._create_config("cr2res_util_wave", f"util_wave_{calib_type}", verbose)
 
         # Run EsoRex
 
-        print()
+        if calib_type == "fpet":
+            wl_err = -1.0
 
-        config_file = self.config_folder / "util_wave.rc"
+        if poly_deg == 0:
+            keep_high_deg = "TRUE"
+        else:
+            keep_high_deg = "FALSE"
 
-        if calib_type == "une":
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_wave",
-                "--wl_method=XCORR",
-                "--wl_degree=0",
-                "--keep",
-                "--wl_err=0.1",
-                "--fallback",
-                sof_file,
-            ]
+        print("\nConfiguration:")
+        print(f"   - Polynomial degree = {poly_deg}")
+        print(f"   - Wavelength error (nm) = {wl_err}")
+        print(f"   - Keep higher degrees = {keep_high_deg}\n")
 
-        elif calib_type == "fpet" and check_une:
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_wave",
-                "--wl_method=ETALON",
-                "--wl_degree=4",
-                "--fallback",
-                sof_file,
-            ]
+        config_file = self.config_folder / f"util_wave_{calib_type}.rc"
 
-        elif calib_type == "fpet" and not check_une:
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_util_wave",
-                "--wl_method=XCORR",
-                "--wl_degree=0",
-                "--keep",
-                "--wl_err=0.1",
-                "--fallback",
-                sof_file,
-            ]
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "cr2res_util_wave",
+            f"--wl_degree={poly_deg}",
+            f"--wl_err={wl_err}",
+            f"--keep={keep_high_deg}",
+            sof_file,
+        ]
 
         if verbose:
             stdout = None
@@ -2777,7 +2908,9 @@ class Pipeline:
         subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
         if not verbose:
-            print(" [DONE]\n")
+            print(" [DONE]")
+
+        print()
 
         # Update file dictionary with UTIL_WAVE_TW file
 
@@ -3039,10 +3172,10 @@ class Pipeline:
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
         """
-        Method for converting the output files with the extracted
-        spectra into input files for `Molecfit`. The content of this
-        method has been adapted from the ``cr2res_drs2molecfit.py``
-        code that is included with the EsoRex pipeline for CRIRES+
+        Method for converting the extracted spectra into input files
+        for `Molecfit`. The content of this method has been adapted
+        from the ``cr2res_drs2molecfit.py`` code that is included
+        with the EsoRex pipeline for CRIRES+
         (see https://www.eso.org/sci/software/pipelines/).
 
         Parameters
@@ -3073,13 +3206,19 @@ class Pipeline:
         print("\nOutput files:")
 
         with fits.open(fits_file) as hdu_list:
-            # Use the primary HDU with header in output files
-            hdul_output = fits.HDUList([hdu_list[0]])
-            hdul_winc = fits.HDUList([hdu_list[0]])
-            hdul_atm = fits.HDUList([hdu_list[0]])
+            # Copy header from the primary HDU
+            hdu_out = fits.HDUList([hdu_list[0]])
+            hdu_win = fits.HDUList([hdu_list[0]])
+            hdu_atm = fits.HDUList([hdu_list[0]])
+            hdu_con = fits.HDUList([hdu_list[0]])
+            hdu_cor = fits.HDUList([hdu_list[0]])
 
             # Initialize empty lists
-            wmin, wmax, map2chip, atm_parms_ext = [], [], [], []
+            wmin = []
+            wmax = []
+            map_chip = []
+            map_ext = [0]
+            wlc_fit = []
 
             # Initialize counter for order/detector
             count = 1
@@ -3090,75 +3229,85 @@ class Pipeline:
                 data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
                 # Find all spectral orders
-                spec_ord = np.sort([i[0:6] for i in data.dtype.names if "WL" in i])
+                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
 
-                # loop over orders
-                for item in spec_ord:
-                    # isolate WAVE, SPEC, and ERR for given order/detector
-                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "WL"]
-                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "SPEC"]
-                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "ERR"]
+                # Loop over spectral orders
+                for item in spec_orders:
+                    # Extract WAVE, SPEC, and ERR for given order/detector
+                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_WL"]
+                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_SPEC"]
+                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_ERR"]
 
-                    # create fits column for WAVE
+                    spec = np.nan_to_num(spec)
+                    err = np.nan_to_num(err)
+
+                    # Convert wavelength from nm to um
+                    wavel *= 1e-3
+
+                    # Create a FITS columns for WAVE, SPEC, and ERR
                     col1 = fits.Column(name="WAVE", format="D", array=wavel)
-
-                    # create fits column for SPEC
                     col2 = fits.Column(name="SPEC", format="D", array=spec)
-
-                    # create fits column for ERR
                     col3 = fits.Column(name="ERR", format="D", array=err)
 
-                    # create fits table HDU with WAVE SPEC ERR
+                    # Create FITS table with WAVE, SPEC, and ERR
                     table_hdu = fits.BinTableHDU.from_columns([col1, col2, col3])
 
-                    # append table HDU to output HDU list
-                    hdul_output.append(table_hdu)
+                    # Append table HDU to output of HDU list
+                    hdu_out.append(table_hdu)
 
-                    # append wmin for given order to wmin array and convert to micron
-                    wmin.append(np.min(wavel) * 0.001)
+                    # Minimum and maximum wavelengths for a given order
+                    wmin.append(np.min(wavel))
+                    wmax.append(np.max(wavel))
 
-                    # append wmax for giver order to wmax array and convert to micron
-                    wmax.append(np.max(wavel) * 0.001)
-
-                    # append order counter to map2chip
-                    map2chip.append(count)
-
-                    if count == 1:
-                        atm_parms_ext.append(0)
-                    else:
-                        atm_parms_ext.append(1)
+                    # Mapping for order/detector
+                    map_chip.append(count)
+                    map_ext.append(count)
+                    wlc_fit.append(1)
 
                     count += 1
 
-            # setup the columns for the WAVE_INCLUDE output file
-            wmin_winc = fits.Column(name="LOWER_LIMIT", format="D", array=wmin)
-            wmax_winc = fits.Column(name="UPPER_LIMIT", format="D", array=wmax)
-            map2chip_winc = fits.Column(
-                name="MAPPED_TO_CHIP", format="I", array=map2chip
-            )
-            # creates WAVE_INCLUDE table HDU and appends to the HDU list
-            table_hdu_winc = fits.BinTableHDU.from_columns(
-                [wmin_winc, wmax_winc, map2chip_winc]
-            )
-            hdul_winc.append(table_hdu_winc)
+            # Create FITS file with SCIENCE
+            print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits")
+            hdu_out.writeto(output_dir / f"SCIENCE_{nod_ab}.fits", overwrite=True)
 
-            print(f"   - calib/molefit_files/SCIENCE_{nod_ab}.fits")
-            hdul_output.writeto(output_dir / f"SCIENCE_{nod_ab}.fits", overwrite=True)
+            # Create FITS file with WAVE_INCLUDE
+            col_wmin = fits.Column(name="LOWER_LIMIT", format="D", array=wmin)
+            col_wmax = fits.Column(name="UPPER_LIMIT", format="D", array=wmax)
+            col_map = fits.Column(name="MAPPED_TO_CHIP", format="I", array=map_chip)
+            col_wlc = fits.Column(name="WLC_FIT_FLAG", format="I", array=wlc_fit)
+            col_cont = fits.Column(name="CONT_FIT_FLAG", format="I", array=wlc_fit)
+            columns = [col_wmin, col_wmax, col_map, col_wlc, col_cont]
+            table_hdu = fits.BinTableHDU.from_columns(columns)
+            hdu_win.append(table_hdu)
+            print(f"   - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}.fits")
+            hdu_win.writeto(output_dir / f"WAVE_INCLUDE_{nod_ab}.fits", overwrite=True)
 
-            print(f"   - calib/molefit_files/WAVE_INCLUDE_{nod_ab}.fits")
-            hdul_winc.writeto(
-                output_dir / f"WAVE_INCLUDE_{nod_ab}.fits", overwrite=True
-            )
+            # Create FITS file with MAPPING_ATMOSPHERIC
+            name = "ATM_PARAMETERS_EXT"
+            col_atm = fits.Column(name=name, format="K", array=map_ext)
+            table_hdu = fits.BinTableHDU.from_columns([col_atm])
+            hdu_atm.append(table_hdu)
+            print(f"   - calib/molecfit_input/MAPPING_ATMOSPHERIC_{nod_ab}.fits")
+            fits_file = output_dir / f"MAPPING_ATMOSPHERIC_{nod_ab}.fits"
+            hdu_atm.writeto(fits_file, overwrite=True)
 
-            print(f"   - calib/molefit_files/MAPPING_ATMOSPHERIC_{nod_ab}.fits")
-            col1_atm = fits.Column(
-                name="ATM_PARAMETERS_EXT", format="I", array=atm_parms_ext
-            )
-            table_hdu_atm = fits.BinTableHDU.from_columns([col1_atm])
-            hdul_atm.append(table_hdu_atm)
-            hdul_atm.writeto(
-                output_dir / f"MAPPING_ATMOSPHERIC_{nod_ab}.fits", overwrite=True
-            )
+            # Create FITS file with MAPPING_CONVOLVE
+            name = "LBLRTM_RESULTS_EXT"
+            col_conv = fits.Column(name=name, format="K", array=map_ext)
+            table_hdu = fits.BinTableHDU.from_columns([col_conv])
+            hdu_con.append(table_hdu)
+            print(f"   - calib/molecfit_input/MAPPING_CONVOLVE_{nod_ab}.fits")
+            fits_file = output_dir / f"MAPPING_CONVOLVE_{nod_ab}.fits"
+            hdu_con.writeto(fits_file, overwrite=True)
+
+            # Create FITS file with MAPPING_CORRECT
+            name = "TELLURIC_CORR_EXT"
+            col_corr = fits.Column(name=name, format="K", array=map_ext)
+            table_hdu = fits.BinTableHDU.from_columns([col_corr])
+            hdu_cor.append(table_hdu)
+            print(f"   - calib/molecfit_input/MAPPING_CORRECT_{nod_ab}.fits")
+            fits_file = output_dir / f"MAPPING_CORRECT_{nod_ab}.fits"
+            hdu_cor.writeto(fits_file, overwrite=True)
 
     @typechecked
     def molecfit_model(self, nod_ab: str = "A", verbose: bool = True) -> None:
@@ -3168,7 +3317,8 @@ class Pipeline:
         Parameters
         ----------
         nod_ab : str
-            Nod position of which the extracted spectra are plotted ("A" or "B").
+            Nod position of which the extracted spectra are plotted
+            ("A" or "B").
         verbose : bool
             Print output produced by ``esorex``.
 
@@ -3178,7 +3328,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Run Molecfit", recipe_name="molecfit_model")
+        self._print_section("Fit telluric model", recipe_name="molecfit_model")
 
         # Create output folder
 
@@ -3198,15 +3348,29 @@ class Pipeline:
             print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
             sof_open.write(f"{input_dir / f'SCIENCE_{nod_ab}.fits'} SCIENCE\n")
 
+            print(f"   - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}.fits WAVE_INCLUDE")
+            sof_open.write(
+                f"{input_dir / f'WAVE_INCLUDE_{nod_ab}.fits'} WAVE_INCLUDE\n"
+            )
+
         # Create EsoRex configuration file if not found
 
         self._create_config("molecfit_model", "molecfit_model", verbose)
 
-        # Run EsoRex
-
-        print()
+        # Read molecules from config file
 
         config_file = self.config_folder / "molecfit_model.rc"
+
+        with open(config_file, "r", encoding="utf-8") as open_config:
+            config_text = open_config.readlines()
+
+        print("\nSelected molecules:")
+        for line_item in config_text:
+            if line_item[:10] == "LIST_MOLEC":
+                for mol_item in line_item[11:].split(","):
+                    print(f"   - {mol_item}")
+
+        # Run EsoRex
 
         esorex = [
             "esorex",
@@ -3233,6 +3397,264 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
+    def molecfit_calctrans(self, nod_ab: str = "A", verbose: bool = True) -> None:
+        """
+        Method for running ``molecfit_calctrans``.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the extracted spectra are plotted
+            ("A" or "B").
+        verbose : bool
+            Print output produced by ``esorex``.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section(
+            "Generate telluric spectrum", recipe_name="molecfit_calctrans"
+        )
+
+        # Create output folder
+
+        input_dir = self.calib_folder / "molecfit_input"
+        model_dir = self.calib_folder / "molecfit_model"
+        output_dir = self.calib_folder / "molecfit_calctrans"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Create SOF file
+
+        print("Creating SOF file:")
+
+        sof_file = pathlib.Path(output_dir / "files.sof")
+
+        with open(sof_file, "w", encoding="utf-8") as sof_open:
+            print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
+            sof_open.write(f"{input_dir / f'SCIENCE_{nod_ab}.fits'} SCIENCE\n")
+
+            print(
+                f"   - calib/molecfit_input/MAPPING_ATMOSPHERIC_{nod_ab}.fits MAPPING_ATMOSPHERIC"
+            )
+            sof_open.write(
+                f"{input_dir / f'MAPPING_ATMOSPHERIC_{nod_ab}.fits'} MAPPING_ATMOSPHERIC\n"
+            )
+
+            print(
+                f"   - calib/molecfit_input/MAPPING_CONVOLVE_{nod_ab}.fits MAPPING_CONVOLVE"
+            )
+            sof_open.write(
+                f"{input_dir / f'MAPPING_CONVOLVE_{nod_ab}.fits'} MAPPING_CONVOLVE\n"
+            )
+
+            print("   - calib/molecfit_model/ATM_PARAMETERS.fits ATM_PARAMETERS")
+            sof_open.write(f"{model_dir / 'ATM_PARAMETERS.fits'} ATM_PARAMETERS\n")
+
+            print("   - calib/molecfit_model/MODEL_MOLECULES.fits MODEL_MOLECULES")
+            sof_open.write(f"{model_dir / 'MODEL_MOLECULES.fits'} MODEL_MOLECULES\n")
+
+            print(
+                "   - calib/molecfit_model/BEST_FIT_PARAMETERS.fits BEST_FIT_PARAMETERS"
+            )
+            sof_open.write(
+                f"{model_dir / 'BEST_FIT_PARAMETERS.fits'} BEST_FIT_PARAMETERS\n"
+            )
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("molecfit_calctrans", "molecfit_calctrans", verbose)
+
+        # Run EsoRex
+
+        print()
+
+        config_file = self.config_folder / "molecfit_calctrans.rc"
+
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "molecfit_calctrans",
+            sof_file,
+        ]
+
+        if verbose:
+            stdout = None
+        else:
+            stdout = subprocess.DEVNULL
+            print("Running EsoRex...", end="", flush=True)
+
+        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+        if not verbose:
+            print(" [DONE]")
+
+        # Write updated dictionary to JSON file
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def molecfit_correct(self, nod_ab: str = "A", verbose: bool = True) -> None:
+        """
+        Method for running ``molecfit_correct``.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the extracted spectra are plotted
+            ("A" or "B").
+        verbose : bool
+            Print output produced by ``esorex``.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Apply telluric correction", recipe_name="molecfit_correct")
+
+        # Create output folder
+
+        input_dir = self.calib_folder / "molecfit_input"
+        calctrans_dir = self.calib_folder / "molecfit_calctrans"
+        output_dir = self.calib_folder / "molecfit_correct"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Create SOF file
+
+        print("Creating SOF file:")
+
+        sof_file = pathlib.Path(output_dir / "files.sof")
+
+        with open(sof_file, "w", encoding="utf-8") as sof_open:
+            print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
+            sof_open.write(f"{input_dir / f'SCIENCE_{nod_ab}.fits'} SCIENCE\n")
+
+            print(
+                f"   - calib/molecfit_input/MAPPING_CORRECT_{nod_ab}.fits MAPPING_CORRECT"
+            )
+            sof_open.write(
+                f"{input_dir / f'MAPPING_CORRECT_{nod_ab}.fits'} MAPPING_CORRECT\n"
+            )
+
+            print("   - calib/molecfit_calctrans/TELLURIC_CORR.fits TELLURIC_CORR")
+            sof_open.write(f"{calctrans_dir / 'TELLURIC_CORR.fits'} TELLURIC_CORR\n")
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("molecfit_correct", "molecfit_correct", verbose)
+
+        # Run EsoRex
+
+        print()
+
+        config_file = self.config_folder / "molecfit_correct.rc"
+
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "molecfit_correct",
+            sof_file,
+        ]
+
+        if verbose:
+            stdout = None
+        else:
+            stdout = subprocess.DEVNULL
+            print("Running EsoRex...", end="", flush=True)
+
+        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+        if not verbose:
+            print(" [DONE]")
+
+        # Write updated dictionary to JSON file
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def export_spectra(self, nod_ab: str = "A") -> None:
+        """
+        Method for exporting the extracted spectra to a JSON file.
+        After exporting, the data can be read with Python from the
+        JSON file into a dictionary:
+
+        >>> import json
+        >>> with open('product/spectra_nod_A.json') as json_file:
+        ...    data = json.load(json_file)
+        >>> print(data.keys())
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the extracted spectra will be
+            exported to a JSON file ("A" or "B").
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Export spectra")
+
+        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+
+        print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
+
+        print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
+
+        spec_data = []
+        spec_header = []
+
+        with fits.open(fits_file) as hdu_list:
+            # Loop over 3 detectors
+            for i in range(3):
+                spec_data.append(hdu_list[i + 1].data)
+                spec_header.append(hdu_list[i + 1].header)
+
+        print(" [DONE]")
+
+        print("Exporting spectra...", end="", flush=True)
+
+        spec_dict = {}
+
+        for i, det_item in enumerate(spec_data):
+            spec_orders = np.sort([i[:5] for i in det_item.dtype.names if "WL" in i])
+
+            for spec_item in spec_orders:
+                wavel = det_item[f"{spec_item}_WL"]
+                flux = det_item[f"{spec_item}_SPEC"]
+                error = det_item[f"{spec_item}_ERR"]
+
+                flux = np.nan_to_num(flux)
+                error = np.nan_to_num(error)
+
+                # indices = np.where((flux != 0.0) & (flux != np.nan) & (error != np.nan))[0]
+
+                spec_dict[f"det_{i+1}_{spec_item}_WL"] = list(wavel)
+                spec_dict[f"det_{i+1}_{spec_item}_SPEC"] = list(flux)
+                spec_dict[f"det_{i+1}_{spec_item}_ERR"] = list(error)
+
+        json_out = self.product_folder / f"spectra_nod_{nod_ab}.json"
+
+        with open(json_out, "w", encoding="utf-8") as json_file:
+            json.dump(spec_dict, json_file, indent=4)
+
+        print(" [DONE]")
+
+    @typechecked
     def plot_spectra(self, nod_ab: str = "A", telluric: bool = True) -> None:
         """
         Method for plotting the extracted spectra.
@@ -3240,7 +3662,12 @@ class Pipeline:
         Parameters
         ----------
         nod_ab : str
-            Nod position of which the extracted spectra are plotted ("A" or "B").
+            Nod position of which the extracted spectra are plotted
+            ("A" or "B").
+        telluric : bool
+            Plot a telluric transmission spectrum for comparison. It
+            should have been calculated with
+            :meth:`~pycrires.pipeline.Pipeline.run_skycalc`.
 
         Returns
         -------
@@ -3254,42 +3681,61 @@ class Pipeline:
 
         print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
 
-        print(f"Reading FITS of nod {nod_ab}...", end="", flush=True)
+        print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
 
         spec_data = []
         spec_header = []
 
         with fits.open(fits_file) as hdu_list:
-            # Skip the empty PrimaryHDU
-            for item in hdu_list[1:]:
-                spec_data.append(item.data)
-                spec_header.append(item.header)
+            # Loop over 3 detectors
+            for i in range(3):
+                spec_data.append(hdu_list[i + 1].data)
+                spec_header.append(hdu_list[i + 1].header)
 
         print(" [DONE]")
 
         if telluric:
-            tel_wavel, tel_transm = np.loadtxt(
-                self.calib_folder / "run_skycalc/transm_spec.dat", unpack=True
-            )
+            tel_spec = self.calib_folder / "run_skycalc/transm_spec.dat"
+
+            if not os.path.exists(tel_spec):
+                raise RuntimeError(
+                    "Could not find the telluric transmission "
+                    "spectrum. Please first run the "
+                    "run_skycalc method."
+                )
+
+            tel_wavel, tel_transm = np.loadtxt(tel_spec, unpack=True)
+
+        fits_file = (
+            self.calib_folder / "molecfit_correct/"
+            f"SPECTRUM_TELLURIC_CORR_SCIENCE_{nod_ab}.fits"
+        )
+
+        spec_corr = []
+
+        if os.path.exists(fits_file):
+            with fits.open(fits_file) as hdu_list:
+                hdu_info = hdu_list.info(output=False)
+                num_ext = len(hdu_info) - 1
+
+                for i in range(num_ext):
+                    spec_corr.append(hdu_list[i + 1].data)
 
         print("Plotting spectra...", end="", flush=True)
+
+        count = 0
 
         for i, det_item in enumerate(spec_data):
             n_spec = len(det_item.columns) // 3
 
-            spec_order = []
-            for j in range(1, 20):
-                order_int = str(j).zfill(2)
-
-                if f"{order_int}_01_WL" in det_item.columns.names:
-                    spec_order.append(f"{order_int}_01")
+            spec_orders = np.sort([i[:5] for i in det_item.dtype.names if "WL" in i])
 
             if telluric:
                 plt.figure(figsize=(8, n_spec * 3))
             else:
                 plt.figure(figsize=(8, n_spec * 2))
 
-            for j, spec_item in enumerate(spec_order):
+            for j, spec_item in enumerate(spec_orders):
                 if telluric:
                     plt.subplot(n_spec * 2, 1, n_spec * 2 - j * 2)
                 else:
@@ -3299,20 +3745,20 @@ class Pipeline:
                 flux = det_item[f"{spec_item}_SPEC"]
                 error = det_item[f"{spec_item}_ERR"]
 
+                flux = np.nan_to_num(flux)
+                error = np.nan_to_num(error)
+
                 lower = flux - error
                 upper = flux + error
 
-                indices = np.where((flux != 0.0) & (flux != np.nan))[0]
+                # indices = np.where((flux != 0.0) & (flux != np.nan))[0]
 
-                plt.plot(wavel[indices], flux[indices], "-", lw=0.5, color="tab:blue")
+                plt.plot(wavel, flux, "-", lw=0.5, color="tab:blue")
                 plt.fill_between(
-                    wavel[indices],
-                    lower[indices],
-                    upper[indices],
-                    color="tab:blue",
-                    alpha=0.5,
-                    lw=0.0,
+                    wavel, lower, upper, color="tab:blue", alpha=0.5, lw=0.0
                 )
+                if len(spec_corr) > 0:
+                    plt.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
                 plt.xlabel("Wavelength (nm)", fontsize=13)
                 plt.ylabel("Flux", fontsize=13)
                 plt.minorticks_on()
@@ -3327,6 +3773,8 @@ class Pipeline:
                     plt.ylim(-0.05, 1.05)
                     plt.minorticks_on()
 
+                count += 1
+
             plt.tight_layout()
             plt.savefig(
                 f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}.png", dpi=300
@@ -3337,10 +3785,16 @@ class Pipeline:
         print(" [DONE]")
 
     @typechecked
-    def clean_folder(self) -> None:
+    def clean_folder(self, keep_product: bool = True) -> None:
         """
         Method for removing all the output that is produced by the
         ``Pipeline`` (so not the raw data).
+
+        Parameters
+        ----------
+        keep_product : bool
+            Keep the `product` folder (``True``) or remove that folder
+            as well (``False``).
 
         Returns
         -------
@@ -3351,7 +3805,10 @@ class Pipeline:
         self._print_section("Clean pipeline folder")
 
         files = [self.header_file, self.excel_file, self.json_file]
-        folders = [self.config_folder, self.calib_folder, self.product_folder]
+        folders = [self.config_folder, self.calib_folder]
+
+        if not keep_product:
+            folders.append(self.product_folder)
 
         print("Removing files:")
 
@@ -3405,4 +3862,10 @@ class Pipeline:
         self.run_skycalc(pwv=1.0)
         self.plot_spectra(nod_ab="A", telluric=True)
         self.plot_spectra(nod_ab="B", telluric=True)
+        self.export_spectra(nod_ab="A")
+        self.export_spectra(nod_ab="B")
         self.molecfit_input(nod_ab="A")
+        self.molecfit_model(nod_ab="A", verbose=False)
+        self.molecfit_calctrans(nod_ab="A", verbose=False)
+        self.molecfit_correct(nod_ab="A", verbose=False)
+        self.plot_spectra(nod_ab="A", telluric=True)
