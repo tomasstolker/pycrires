@@ -11,5 +11,4 @@ Documentation for *pycrires*
    installation
    tutorial.ipynb
    modules
-   contributing
    about

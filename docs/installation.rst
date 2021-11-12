@@ -3,7 +3,7 @@
 Installation
 ============
 
-``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.7/3.8/3.9 and is available from `PyPI repository <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
+``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.7/3.8/3.9 and is available from `PyPI <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
 
 Installation from PyPI
 ----------------------
@@ -20,8 +20,6 @@ Or, to update to the most recent version:
 
    $ pip install --upgrade pycrires
 
-.. important::
-   The pipeline is actively developed so it is best to install the Github version (see below) since it contains the latest implementations.
 
 Installation from Github
 ------------------------
@@ -56,10 +54,10 @@ New commits can be pulled from Github once a local copy of the repository exists
 
     $ git pull origin main
 
-Do you want to make changes to the code? Please fork the ``pycrires`` repository on the Github page and clone your own fork instead of the main repository. Contributions in the form of pull requests are welcome (see :ref:`contributing` section).
+Do you want to make changes to the code? Please fork the ``pycrires`` repository on the Github page and clone your own fork instead of the main repository. Contributions in the form of pull requests are welcome (see :ref:`about` section).
 
-EsoRex and Molecfit
--------------------
+EsoRex
+------
 
 In addition to ``pycrires``, it is required to manually install `EsoRex <https://www.eso.org/sci/software/pipelines>`_, the `CRIRES+ recipes <https://www.eso.org/sci/software/pipelines/cr2res/cr2res-pipe-recipes.html>`_, and the `Molecfit recipes <https://www.eso.org/sci/software/pipelines/molecfit/molecfit-pipe-recipes.html>`_. There are recipes available for both the old and upgraded CRIRES instrument so it is important to follow the instructions for *CR2RES* instead of *CRIRES*. On macOS, it is most convenient to use `MacPorts <https://www.eso.org/sci/software/pipelines/installation/macports.html>`_ for installing both EsoRex and the recipes.
 

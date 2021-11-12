@@ -2608,6 +2608,7 @@ class Pipeline:
         # Table with emission lines
         # Y/J -> lines_u_sarmiento.txt
         # H/K -> lines_u_redman.txt
+        # L/M -> lines_thar.txt
 
         code_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -3730,16 +3731,15 @@ class Pipeline:
 
             spec_orders = np.sort([i[:5] for i in det_item.dtype.names if "WL" in i])
 
-            if telluric:
-                plt.figure(figsize=(8, n_spec * 3))
-            else:
-                plt.figure(figsize=(8, n_spec * 2))
+            plt.figure(figsize=(8, n_spec * 2))
 
             for j, spec_item in enumerate(spec_orders):
+                ax = plt.subplot(n_spec, 1, n_spec - j)
+                ax.minorticks_on()
+
                 if telluric:
-                    plt.subplot(n_spec * 2, 1, n_spec * 2 - j * 2)
-                else:
-                    plt.subplot(n_spec, 1, n_spec - j)
+                    ax2 = ax.twinx()
+                    ax2.minorticks_on()
 
                 wavel = det_item[f"{spec_item}_WL"]
                 flux = det_item[f"{spec_item}_SPEC"]
@@ -3753,25 +3753,22 @@ class Pipeline:
 
                 # indices = np.where((flux != 0.0) & (flux != np.nan))[0]
 
-                plt.plot(wavel, flux, "-", lw=0.5, color="tab:blue")
-                plt.fill_between(
+                ax.plot(wavel, flux, "-", lw=0.5, color="tab:blue")
+                ax.fill_between(
                     wavel, lower, upper, color="tab:blue", alpha=0.5, lw=0.0
                 )
                 if len(spec_corr) > 0:
-                    plt.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
-                plt.xlabel("Wavelength (nm)", fontsize=13)
-                plt.ylabel("Flux", fontsize=13)
-                plt.minorticks_on()
-                xlim = plt.xlim()
+                    ax.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
+                ax.set_xlabel("Wavelength (nm)", fontsize=13)
+                ax.set_ylabel("Flux", fontsize=13)
+
+                xlim = ax.get_xlim()
 
                 if telluric:
-                    plt.subplot(n_spec * 2, 1, n_spec * 2 - j * 2 - 1)
-                    plt.plot(tel_wavel, tel_transm, "-", lw=0.5, color="tab:orange")
-                    plt.xlabel("Wavelength (nm)", fontsize=13)
-                    plt.ylabel(r"T$_\lambda$", fontsize=13)
-                    plt.xlim(xlim[0], xlim[1])
-                    plt.ylim(-0.05, 1.05)
-                    plt.minorticks_on()
+                    ax2.plot(tel_wavel, tel_transm, "-", lw=0.5, color="tab:orange")
+                    ax2.set_ylabel(r"T$_\lambda$", fontsize=13)
+                    ax2.set_xlim(xlim[0], xlim[1])
+                    ax2.set_ylim(-0.05, 1.05)
 
                 count += 1
 
