@@ -23,7 +23,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from scipy.ndimage.filters import gaussian_filter
+from scipy import interpolate, ndimage, optimize, signal
 from typeguard import typechecked
 
 
@@ -1088,25 +1088,26 @@ class Pipeline:
         # See https://skycalc-ipy.readthedocs.io/en/latest/GettingStarted.html
         sky_calc["msolflux"] = 130
 
-        if self.header_data["INS.WLEN.ID"][0][0] == "Y":
+        indices = self.header_data["INS.WLEN.ID"].notna()
+        wlen_id = self.header_data["INS.WLEN.ID"][indices].iloc[0]
+
+        if wlen_id[0] == "Y":
             sky_calc["wmin"] = 500.0  # (nm)
             sky_calc["wmax"] = 1500.0  # (nm)
 
-        elif self.header_data["INS.WLEN.ID"][0][0] == "J":
+        elif wlen_id[0] == "J":
             sky_calc["wmin"] = 800.0  # (nm)
             sky_calc["wmax"] = 2000.0  # (nm)
 
-        elif self.header_data["INS.WLEN.ID"][0][0] == "H":
+        elif wlen_id[0] == "H":
             sky_calc["wmin"] = 1000.0  # (nm)
             sky_calc["wmax"] = 2500.0  # (nm)
 
-        elif self.header_data["INS.WLEN.ID"][0][0] == "K":
+        elif wlen_id[0] == "K":
             sky_calc["wmin"] = 1500.0  # (nm)
             sky_calc["wmax"] = 3000.0  # (nm)
 
         else:
-            wlen_id = self.header_data["INS.WLEN.ID"][science_index][0]
-
             raise NotImplementedError(
                 f"The wavelength range for {wlen_id} is not yet implemented."
             )
@@ -1154,11 +1155,11 @@ class Pipeline:
 
         sigma_lsf_gauss_filter = sigma_lsf / spacing
 
-        sky_spec["flux"] = gaussian_filter(
+        sky_spec["flux"] = ndimage.gaussian_filter(
             sky_spec["flux"], sigma=sigma_lsf_gauss_filter, mode="nearest"
         )
 
-        sky_spec["trans"] = gaussian_filter(
+        sky_spec["trans"] = ndimage.gaussian_filter(
             sky_spec["trans"], sigma=sigma_lsf_gauss_filter, mode="nearest"
         )
 
@@ -3170,6 +3171,14 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
+        # Export spectra to JSON files
+
+        # for nod in ["A", "B"]:
+        #     fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}.fits"
+        #
+        #     if os.path.exists(fits_file):
+        #         self.export_spectra(nod_ab=nod)
+
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
         """
@@ -3201,8 +3210,14 @@ class Pipeline:
 
         # Read extracted spectrum
 
-        print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+
+        if os.path.exists(fits_file):
+            print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
+
+        else:
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"            
+            print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
         print("\nOutput files:")
 
@@ -3229,12 +3244,12 @@ class Pipeline:
                 # Get detector data
                 data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
-                # Find all spectral orders
+                # Get all spectral orders
                 spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
 
                 # Loop over spectral orders
                 for item in spec_orders:
-                    # Extract WAVE, SPEC, and ERR for given order/detector
+                    # Extract WL, SPEC, and ERR for given order/detector
                     wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_WL"]
                     spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_SPEC"]
                     err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_ERR"]
@@ -3585,6 +3600,139 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
+    def correct_wavelengths(self, nod_ab: str = "A") -> None:
+        """
+        Method for correcting the wavelength solution with a linear
+        function and maximizing the correlation with the telluric
+        model spectrum from SkyCalc, obtained with
+        :meth:`~pycrires.pipeline.Pipeline.run_skycalc`.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position with the spectra of which the wavelength
+            solution will be corrected.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Correct wavelength solution")
+
+        print("Model file: run_skycalc/transm_spec.dat")
+        print(f"Spectrum file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
+
+        # Read telluric model
+
+        print(f"Reading telluric model spectrum...", end="", flush=True)
+
+        transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
+
+        print(" [DONE]")
+
+        # Read extracted spectra
+
+        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+
+        print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
+
+        hdu_list = fits.open(fits_file)
+
+        print(" [DONE]")
+
+        # Objective function for maximizing the correlation
+        # with the telluric model spectrum from SkyCalc
+
+        def corr_func(param, *args):
+            obs_spec, model_interp = args[0], args[1]
+            wavel_new = param[0] + param[1] * obs_spec[:, 0]  # (nm)
+
+            try:
+                model_spec = model_interp(wavel_new)
+                corr_value = -1.0 * np.sum(
+                    obs_spec[:, 1] / np.median(obs_spec[:, 1]) * model_spec
+                )
+
+            except ValueError:
+                corr_value = np.inf
+
+            # method, times = signal.choose_conv_method(
+            #     obs_spec[:, 1], model_spec, mode="valid", measure=True
+            # )
+
+            # corr = signal.correlate(
+            #     obs_spec[:, 1] / np.median(obs_spec[:, 1]),
+            #     model_spec / np.median(model_spec),
+            #     mode="valid",
+            #     method="direct",
+            # )
+
+            return corr_value
+
+        transm_interp = interpolate.interp1d(
+            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        )
+
+        for i_det in range(3):
+            # Get detector data
+            data = hdu_list[f"CHIP{i_det+1}.INT1"].data
+
+            # Get all spectral orders
+            spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+
+            print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
+
+            # Loop over spectral orders
+            for spec_name in spec_orders:
+                # Extract WL, SPEC, and ERR for given order/detector
+                wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
+                spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+                err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
+
+                spec = np.nan_to_num(spec)
+                err = np.nan_to_num(err)
+
+                spec_data = np.column_stack([wavel, spec, err])
+
+                # spec_filt = signal.medfilt(spec, kernel_size=201)
+                # poly_coef = np.polyfit(wavel, spec_filt, 3)
+                # poly_spec = np.poly1d(poly_coef)
+                # spec_data[:, 1] /= poly_spec(wavel)
+
+                opt_result = optimize.minimize(
+                    corr_func,
+                    x0=(0.01, 1.0),
+                    args=(spec_data, transm_interp),
+                    method="Nelder-Mead",
+                    bounds=((-1.0, 1.0), (1.0, 1.0)),
+                    options={"maxiter": 1000, "xatol": 1e-4, "fatol": np.inf},
+                )
+
+                print(
+                    f"   - {spec_name} -> lambda = {opt_result.x[0]:.4f} "
+                    f"+ {opt_result.x[1]:.1f} * lambda'"
+                )
+
+                if not opt_result.success:
+                    warnings.warn(
+                        f"Could not converge with correcting the "
+                        f"wavelength solution of {spec_name[:-3]}."
+                    )
+
+                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                    opt_result.x[0] + opt_result.x[1] * spec_data[:, 0]
+                )
+
+        # Write the corrected spectra to a new FITS file
+
+        out_file = f"products/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+        print(f"\nStoring corrected spectra: {out_file}")
+
+        hdu_list.writeto(fits_file[:-5] + "_corr.fits", overwrite=True)
+
+    @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:
         """
         Method for exporting the extracted spectra to a JSON file.
@@ -3613,17 +3761,14 @@ class Pipeline:
         fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
 
         print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
-
-        print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
+        print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
 
         spec_data = []
-        spec_header = []
 
         with fits.open(fits_file) as hdu_list:
             # Loop over 3 detectors
             for i in range(3):
                 spec_data.append(hdu_list[i + 1].data)
-                spec_header.append(hdu_list[i + 1].header)
 
         print(" [DONE]")
 
@@ -3632,7 +3777,7 @@ class Pipeline:
         spec_dict = {}
 
         for i, det_item in enumerate(spec_data):
-            spec_orders = np.sort([i[:5] for i in det_item.dtype.names if "WL" in i])
+            spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
 
             for spec_item in spec_orders:
                 wavel = det_item[f"{spec_item}_WL"]
@@ -3656,7 +3801,9 @@ class Pipeline:
         print(" [DONE]")
 
     @typechecked
-    def plot_spectra(self, nod_ab: str = "A", telluric: bool = True) -> None:
+    def plot_spectra(
+        self, nod_ab: str = "A", telluric: bool = True, corrected: bool = False
+    ) -> None:
         """
         Method for plotting the extracted spectra.
 
@@ -3669,6 +3816,9 @@ class Pipeline:
             Plot a telluric transmission spectrum for comparison. It
             should have been calculated with
             :meth:`~pycrires.pipeline.Pipeline.run_skycalc`.
+        corrected : bool
+            Plot the wavelength-corrected spectra. The output from
+            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
 
         Returns
         -------
@@ -3678,20 +3828,24 @@ class Pipeline:
 
         self._print_section("Plot spectra")
 
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        if corrected:
+            fits_file = (
+                f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+            )
+            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
 
-        print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
+        else:
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
 
         print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
 
         spec_data = []
-        spec_header = []
 
         with fits.open(fits_file) as hdu_list:
             # Loop over 3 detectors
             for i in range(3):
                 spec_data.append(hdu_list[i + 1].data)
-                spec_header.append(hdu_list[i + 1].header)
 
         print(" [DONE]")
 
@@ -3729,12 +3883,12 @@ class Pipeline:
         for i, det_item in enumerate(spec_data):
             n_spec = len(det_item.columns) // 3
 
-            spec_orders = np.sort([i[:5] for i in det_item.dtype.names if "WL" in i])
+            spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
 
             plt.figure(figsize=(8, n_spec * 2))
 
-            for j, spec_item in enumerate(spec_orders):
-                ax = plt.subplot(n_spec, 1, n_spec - j)
+            for k, spec_item in enumerate(spec_orders):
+                ax = plt.subplot(n_spec, 1, n_spec - k)
                 ax.minorticks_on()
 
                 if telluric:
@@ -3773,9 +3927,15 @@ class Pipeline:
                 count += 1
 
             plt.tight_layout()
-            plt.savefig(
-                f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}.png", dpi=300
-            )
+
+            if corrected:
+                plot_file = (
+                    f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_corr.png"
+                )
+            else:
+                plot_file = f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}.png"
+
+            plt.savefig(plot_file, dpi=300)
             plt.clf()
             plt.close()
 
@@ -3857,8 +4017,10 @@ class Pipeline:
         self.util_wave(calib_type="fpet", verbose=False)
         self.obs_nodding(verbose=False)
         self.run_skycalc(pwv=1.0)
-        self.plot_spectra(nod_ab="A", telluric=True)
-        self.plot_spectra(nod_ab="B", telluric=True)
+        self.correct_wavelengths(nod_ab="A")
+        self.correct_wavelengths(nod_ab="B")
+        self.plot_spectra(nod_ab="A", telluric=True, corrected=True)
+        self.plot_spectra(nod_ab="B", telluric=True, corrected=True)
         self.export_spectra(nod_ab="A")
         self.export_spectra(nod_ab="B")
         self.molecfit_input(nod_ab="A")
