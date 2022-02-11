@@ -234,7 +234,9 @@ class Pipeline:
 
             else:
                 indices = ~np.isnan(header)
-                indices[header == 0.0] = False
+
+                if sum(header == 0.0) != len(header):
+                    indices[header == 0.0] = False
 
             if np.all(header[indices] == header[indices][0]):
                 print(f"{value} = {header[0]}")
@@ -423,6 +425,16 @@ class Pipeline:
                 )
 
                 if pipeline_method == "util_calib_une":
+                    # From the manual: If there remain detector
+                    # features that correlate with the detector
+                    # columns in the combined frames, as has
+                    # sometimes been found to be the case,
+                    # --subtract_nolight_rows can be set to TRUE.
+                    # This makes use of the bottom 40 rows of the
+                    # detectors which are intentionally baffled
+                    # to not receive light. A vertical median over
+                    # these rows is calculated, and the result
+                    # subtracted from the image row-by-row.
                     config_text = config_text.replace(
                         "cr2res.cr2res_util_calib.subtract_nolight_rows=FALSE",
                         "cr2res.cr2res_util_calib.subtract_nolight_rows=TRUE",
@@ -1033,9 +1045,9 @@ class Pipeline:
         pwv : float
             Precipitable water vapor (default: 3.5) that is used for
             the telluric spectrum. This value will impact the depth
-            of the telluric transmission lines which can be seen
-            when plotting the spectra with
-            :meth:`~pycrires.pipeline.Pipeline.plot_spectra` and
+            of the telluric lines which can be seen when plotting
+            the spectra with
+            :meth:`~pycrires.pipeline.Pipeline.plot_spectra` while
             setting ``telluric=True``.
 
         Returns
@@ -2781,6 +2793,10 @@ class Pipeline:
                     "run the util_genlines method."
                 )
 
+        else:
+            with open(sof_file, "w", encoding="utf-8") as sof_open:
+                pass
+
         # Find UTIL_CALIB file
 
         file_found = False
@@ -2989,30 +3005,74 @@ class Pipeline:
 
         print(f"Unique DIT values: {unique_dit}\n")
 
+        # Count nod positions
+
+        nod_a_count = sum(self.header_data["SEQ.NODPOS"] == "A")
+        nod_b_count = sum(self.header_data["SEQ.NODPOS"] == "B")
+
+        print(f"Number of exposures at nod A: {nod_a_count}")
+        print(f"Number of exposures at nod B: {nod_b_count}")
+
+        if nod_a_count != nod_b_count:
+            warnings.warn("There is an unequal number of exposures "
+                          "at nod A and nod B. The pipeline has not "
+                          "been tested for this so an error or "
+                          "unexpected results may occur.")
+
         # Create SOF file
 
-        print("Creating SOF file:")
+        count_exp = 0
 
-        sof_file = pathlib.Path(self.product_folder / "files.sof")
+        for i_row, item_row in self.header_data.iterrows():
+            if i_row == len(self.header_data["SEQ.NODPOS"])-1:
+                continue
 
-        with open(sof_file, "w", encoding="utf-8") as sof_open:
-            for item in self.header_data[indices]["ORIGFILE"]:
-                file_path = f"{self.path}/raw/{item}"
-                header = fits.getheader(file_path)
+            elif isinstance(self.header_data["SEQ.NODPOS"][i_row+1], str):
+                if item_row["SEQ.NODPOS"] not in ["A", "B"]:
+                    continue
 
-                if "ESO DPR TECH" in header:
-                    if header["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
-                        sof_open.write(f"{file_path} OBS_NODDING_OTHER\n")
-                        self._update_files("OBS_NODDING_OTHER", file_path)
+                elif self.header_data["SEQ.NODPOS"][i_row] == self.header_data["SEQ.NODPOS"][i_row+1]:
+                    continue
 
-                    elif header["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
-                        sof_open.write(f"{file_path} OBS_NODDING_JITTER\n")
-                        self._update_files("OBS_NODDING_JITTER", file_path)
+            elif np.isnan(self.header_data["SEQ.NODPOS"][i_row+1]):
+                continue
 
-                else:
-                    raise RuntimeError(
-                        f"Could not find ESO.DPR.TECH in " f"the header of {item}."
-                    )
+            print(f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:")
+            sof_file = pathlib.Path(self.product_folder / f"files_{count_exp:03d}.sof")
+
+            sof_open = open(sof_file, "w", encoding="utf-8")
+
+            file_0 = self.header_data["ORIGFILE"][i_row]
+            file_1 = self.header_data["ORIGFILE"][i_row+1]
+
+            file_path_0 = f"{self.path}/raw/{file_0}"
+            file_path_1 = f"{self.path}/raw/{file_1}"
+
+            header_0 = fits.getheader(file_path_0)
+            header_1 = fits.getheader(file_path_1)
+
+            if "ESO DPR TECH" in header_0:
+                nod_0 = self.header_data["SEQ.NODPOS"][i_row]
+                nod_1 = self.header_data["SEQ.NODPOS"][i_row+1]
+
+                if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
+                    sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
+                    self._update_files("OBS_NODDING_OTHER", file_path_1)
+
+                    sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
+                    self._update_files("OBS_NODDING_OTHER", file_path_1)
+
+                elif header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
+                    sof_open.write(f"{file_path_0} OBS_NODDING_JITTER\n")
+                    self._update_files("OBS_NODDING_JITTER", file_path_0)
+
+                    sof_open.write(f"{file_path_1} OBS_NODDING_JITTER\n")
+                    self._update_files("OBS_NODDING_JITTER", file_path_1)
+
+            else:
+                raise RuntimeError(
+                    f"Could not find ESO.DPR.TECH in the header of {item}."
+                )
 
             # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
 
@@ -3106,78 +3166,115 @@ class Pipeline:
             if not file_found:
                 warnings.warn("Could not find CAL_DETLIN_COEFFS.")
 
-        # Create EsoRex configuration file if not found
+            sof_open.close()
 
-        self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
+            # Create EsoRex configuration file if not found
 
-        # Run EsoRex
+            self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
 
-        print()
+            # Run EsoRex
 
-        config_file = self.config_folder / "obs_nodding.rc"
+            print()
 
-        esorex = [
-            "esorex",
-            f"--recipe-config={config_file}",
-            f"--output-dir={self.product_folder}",
-            "cr2res_obs_nodding",
-            sof_file,
-        ]
+            config_file = self.config_folder / "obs_nodding.rc"
 
-        if verbose:
-            stdout = None
-        else:
-            stdout = subprocess.DEVNULL
-            print("Running EsoRex...", end="", flush=True)
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={self.product_folder}",
+                "cr2res_obs_nodding",
+                sof_file,
+            ]
 
-        subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
+            if verbose:
+                stdout = None
+            else:
+                stdout = subprocess.DEVNULL
+                print("Running EsoRex...", end="", flush=True)
 
-        if not verbose:
-            print(" [DONE]\n")
+            subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
 
-        # Update file dictionary with output files
+            if not verbose:
+                print(" [DONE]\n")
 
-        print("Output files:")
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedA.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_extractedA.fits"
-        self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedB.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_extractedB.fits"
-        self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extracted_combined.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_combinedA.fits"
-        self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedA.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_combinedB.fits"
-        self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedB.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_modelA.fits"
-        self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelA.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_modelB.fits"
-        self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelB.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_slitfuncA.fits"
-        self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncA.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits")
 
-        fits_file = self.product_folder / "cr2res_obs_nodding_slitfuncB.fits"
-        self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncB.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits")
 
-        # fits_file = self.product_folder / "cr2res_obs_nodding_throughput.fits"
-        # self._update_files("OBS_NODDING_THROUGHPUT", str(fits_file))
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_A.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits")
+
+            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_B.fits")
+            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits")
+
+            # Update file dictionary with output files
+
+            print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
+
+            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
+            self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
+
+            # fits_file = self.product_folder / f"cr2res_obs_nodding_throughput_{count_exp:03d}.fits"
+            # self._update_files("OBS_NODDING_THROUGHPUT", str(fits_file))
+
+            count_exp += 1
 
         # Write updated dictionary to JSON file
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-        # Export spectra to JSON files
+        # Export spectra of the first exposure to JSON files
 
-        # for nod in ["A", "B"]:
-        #     fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}.fits"
-        #
-        #     if os.path.exists(fits_file):
-        #         self.export_spectra(nod_ab=nod)
+        for nod in ["A", "B"]:
+            fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}_000.fits"
+
+            if os.path.exists(fits_file):
+                self.export_spectra(nod_ab=nod)
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
@@ -3737,10 +3834,11 @@ class Pipeline:
         """
         Method for exporting the extracted spectra to a JSON file.
         After exporting, the data can be read with Python from the
-        JSON file into a dictionary:
+        JSON file into a dictionary. For example, reading the
+        spectrum of the first exposure:
 
         >>> import json
-        >>> with open('product/spectra_nod_A.json') as json_file:
+        >>> with open('product/spectra_nod_A_000.json') as json_file:
         ...    data = json.load(json_file)
         >>> print(data.keys())
 
@@ -3758,47 +3856,54 @@ class Pipeline:
 
         self._print_section("Export spectra")
 
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        count = 0
 
-        print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
-        print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
+        while True:
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits"
 
-        spec_data = []
+            if not pathlib.Path(fits_file).exists():
+                break
 
-        with fits.open(fits_file) as hdu_list:
-            # Loop over 3 detectors
-            for i in range(3):
-                spec_data.append(hdu_list[i + 1].data)
+            print(f"Reading nod {nod_ab} from cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits", end="", flush=True)
 
-        print(" [DONE]")
+            spec_data = []
 
-        print("Exporting spectra...", end="", flush=True)
+            with fits.open(fits_file) as hdu_list:
+                # Loop over 3 detectors
+                for i in range(3):
+                    spec_data.append(hdu_list[i + 1].data)
 
-        spec_dict = {}
+            print(" [DONE]")
 
-        for i, det_item in enumerate(spec_data):
-            spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
+            print("Exporting spectra to JSON file...", end="", flush=True)
 
-            for spec_item in spec_orders:
-                wavel = det_item[f"{spec_item}_WL"]
-                flux = det_item[f"{spec_item}_SPEC"]
-                error = det_item[f"{spec_item}_ERR"]
+            spec_dict = {}
 
-                flux = np.nan_to_num(flux)
-                error = np.nan_to_num(error)
+            for i, det_item in enumerate(spec_data):
+                spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
 
-                # indices = np.where((flux != 0.0) & (flux != np.nan) & (error != np.nan))[0]
+                for spec_item in spec_orders:
+                    wavel = det_item[f"{spec_item}_WL"]
+                    flux = det_item[f"{spec_item}_SPEC"]
+                    error = det_item[f"{spec_item}_ERR"]
 
-                spec_dict[f"det_{i+1}_{spec_item}_WL"] = list(wavel)
-                spec_dict[f"det_{i+1}_{spec_item}_SPEC"] = list(flux)
-                spec_dict[f"det_{i+1}_{spec_item}_ERR"] = list(error)
+                    flux = np.nan_to_num(flux)
+                    error = np.nan_to_num(error)
 
-        json_out = self.product_folder / f"spectra_nod_{nod_ab}.json"
+                    # indices = np.where((flux != 0.0) & (flux != np.nan) & (error != np.nan))[0]
 
-        with open(json_out, "w", encoding="utf-8") as json_file:
-            json.dump(spec_dict, json_file, indent=4)
+                    spec_dict[f"det_{i+1}_{spec_item}_WL"] = list(wavel)
+                    spec_dict[f"det_{i+1}_{spec_item}_SPEC"] = list(flux)
+                    spec_dict[f"det_{i+1}_{spec_item}_ERR"] = list(error)
 
-        print(" [DONE]")
+            json_out = self.product_folder / f"spectra_nod_{nod_ab}_{count:03d}.json"
+
+            with open(json_out, "w", encoding="utf-8") as json_file:
+                json.dump(spec_dict, json_file, indent=4)
+
+            print(" [DONE]")
+
+            count += 1
 
     @typechecked
     def plot_spectra(
