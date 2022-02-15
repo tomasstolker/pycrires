@@ -1009,6 +1009,7 @@ class Pipeline:
 
         key_file = os.path.dirname(__file__) + "/keywords.txt"
         keywords = np.genfromtxt(key_file, dtype="str", delimiter=",")
+        print(os.listdir())
 
         raw_files = pathlib.Path(self.path / "raw").glob("*.fits")
 
@@ -3698,6 +3699,7 @@ class Pipeline:
 
     @typechecked
     def correct_wavelengths(self, nod_ab: str = "A") -> None:
+        from scipy.ndimage import gaussian_filter1d
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
@@ -3726,47 +3728,20 @@ class Pipeline:
         print(f"Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
+        print(transm_spec)
 
         print(" [DONE]")
 
         # Read extracted spectra
 
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_000.fits"
+        #fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
 
         print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
 
         hdu_list = fits.open(fits_file)
 
         print(" [DONE]")
-
-        # Objective function for maximizing the correlation
-        # with the telluric model spectrum from SkyCalc
-
-        def corr_func(param, *args):
-            obs_spec, model_interp = args[0], args[1]
-            wavel_new = param[0] + param[1] * obs_spec[:, 0]  # (nm)
-
-            try:
-                model_spec = model_interp(wavel_new)
-                corr_value = -1.0 * np.sum(
-                    obs_spec[:, 1] / np.median(obs_spec[:, 1]) * model_spec
-                )
-
-            except ValueError:
-                corr_value = np.inf
-
-            # method, times = signal.choose_conv_method(
-            #     obs_spec[:, 1], model_spec, mode="valid", measure=True
-            # )
-
-            # corr = signal.correlate(
-            #     obs_spec[:, 1] / np.median(obs_spec[:, 1]),
-            #     model_spec / np.median(model_spec),
-            #     mode="valid",
-            #     method="direct",
-            # )
-
-            return corr_value
 
         transm_interp = interpolate.interp1d(
             transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
@@ -3788,38 +3763,43 @@ class Pipeline:
                 spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
                 err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-                spec = np.nan_to_num(spec)
-                err = np.nan_to_num(err)
+                #Remove continuum and nans of spectra
+                nans = np.isnan(spec)
+                continuum = gaussian_filter1d(spec[~nans], 100, mode='reflect')
+                spec_flat = spec[~nans]/continuum - 1
 
-                spec_data = np.column_stack([wavel, spec, err])
+                #Don't use the edges as that sometimes gives problems
+                spec_flat = spec_flat[20:-20]
+                used_wavel = wavel[~nans][20:-20]
+                
+                #Prepare cross-correlation grid
+                a_grid = np.linspace(0.9, 1.1, 200)[:,np.newaxis, np.newaxis]
+                b_grid = np.linspace(-0.5,0.5, 200)[np.newaxis,:, np.newaxis]
+                mean_wavel = np.mean(wavel)
+                wl_matrix = a_grid * (used_wavel[np.newaxis,np.newaxis,:]-mean_wavel) + mean_wavel + b_grid
+                template = transm_interp(wl_matrix) - 1
+                template_std = np.mean(np.std(template, axis=-1))
 
-                # spec_filt = signal.medfilt(spec, kernel_size=201)
-                # poly_coef = np.polyfit(wavel, spec_filt, 3)
-                # poly_spec = np.poly1d(poly_coef)
-                # spec_data[:, 1] /= poly_spec(wavel)
+                #Check if there are enough telluric features in this wavelength range
+                if template_std>0.01:
+                    #cross-correlation
+                    cross_corr = template.dot(spec_flat)
 
-                opt_result = optimize.minimize(
-                    corr_func,
-                    x0=(0.01, 1.0),
-                    args=(spec_data, transm_interp),
-                    method="Nelder-Mead",
-                    bounds=((-1.0, 1.0), (1.0, 1.0)),
-                    options={"maxiter": 1000, "xatol": 1e-4, "fatol": np.inf},
-                )
-
+                    #Find optimal wavelength solution
+                    opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
+                    opt_a = a_grid[opt_idx[0],0,0]
+                    opt_b = b_grid[0,opt_idx[1],0]
+                else:
+                    opt_a = 1.
+                    opt_b = 0.
+                
                 print(
-                    f"   - {spec_name} -> lambda = {opt_result.x[0]:.4f} "
-                    f"+ {opt_result.x[1]:.1f} * lambda'"
+                    f"   - {spec_name} -> lambda = {opt_b:.4f} "
+                    f"+ {opt_a:.4f} * lambda'"
                 )
-
-                if not opt_result.success:
-                    warnings.warn(
-                        f"Could not converge with correcting the "
-                        f"wavelength solution of {spec_name[:-3]}."
-                    )
 
                 hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                    opt_result.x[0] + opt_result.x[1] * spec_data[:, 0]
+                   opt_a*(wavel-mean_wavel) - mean_wavel + opt_b 
                 )
 
         # Write the corrected spectra to a new FITS file
