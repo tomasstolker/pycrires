@@ -3268,10 +3268,10 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-        # Export spectra of the first exposure to JSON files
+        # Export the extracted spectrum to a JSON file
 
         for nod in ["A", "B"]:
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}_000.fits"
+            fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
 
             if os.path.exists(fits_file):
                 self.export_spectra(nod_ab=nod)
@@ -3907,7 +3907,7 @@ class Pipeline:
 
     @typechecked
     def plot_spectra(
-        self, nod_ab: str = "A", telluric: bool = True, corrected: bool = False
+        self, nod_ab: str = "A", telluric: bool = True, corrected: bool = False, file_id: int = 0
     ) -> None:
         """
         Method for plotting the extracted spectra.
@@ -3924,6 +3924,13 @@ class Pipeline:
         corrected : bool
             Plot the wavelength-corrected spectra. The output from
             :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
+        file_id : int
+            File ID number from the FITS filename as produced by
+            :meth:`~pycrires.pipeline.Pipeline.obs_nodding`. The
+            numbers consist of three values, starting at 000. To
+            select the first file (that contains 000), set
+            ``file_id=0``. For the second file, which has 001 in
+            its filename, set ``file_id=1``, etc.
 
         Returns
         -------
@@ -3935,13 +3942,13 @@ class Pipeline:
 
         if corrected:
             fits_file = (
-                f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+                f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr_{file_id:03d}.fits"
             )
-            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
+            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_corr_{file_id:03d}.fits")
 
         else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
-            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}.fits")
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits"
+            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits")
 
         print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
 
@@ -4035,10 +4042,10 @@ class Pipeline:
 
             if corrected:
                 plot_file = (
-                    f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_corr.png"
+                    f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_corr_{file_id:03d}.png"
                 )
             else:
-                plot_file = f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}.png"
+                plot_file = f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_{file_id:03d}.png"
 
             plt.savefig(plot_file, dpi=300)
             plt.clf()
