@@ -3007,8 +3007,14 @@ class Pipeline:
 
         # Count nod positions
 
-        nod_a_count = sum(self.header_data["SEQ.NODPOS"] == "A")
-        nod_b_count = sum(self.header_data["SEQ.NODPOS"] == "B")
+        nod_a_exp = (self.header_data["SEQ.NODPOS"] == "A") & \
+                    (self.header_data["DPR.CATG"] == "SCIENCE")
+
+        nod_b_exp = (self.header_data["SEQ.NODPOS"] == "B") & \
+                    (self.header_data["DPR.CATG"] == "SCIENCE")
+
+        nod_a_count = sum(nod_a_exp)
+        nod_b_count = sum(nod_b_exp)
 
         print(f"Number of exposures at nod A: {nod_a_count}")
         print(f"Number of exposures at nod B: {nod_b_count}")
@@ -3023,27 +3029,28 @@ class Pipeline:
 
         count_exp = 0
 
-        for i_row, item_row in self.header_data.iterrows():
-            if i_row == len(self.header_data["SEQ.NODPOS"])-1:
-                continue
-
-            elif isinstance(self.header_data["SEQ.NODPOS"][i_row+1], str):
-                if item_row["SEQ.NODPOS"] not in ["A", "B"]:
-                    continue
-
-                elif self.header_data["SEQ.NODPOS"][i_row] == self.header_data["SEQ.NODPOS"][i_row+1]:
-                    continue
-
-            elif np.isnan(self.header_data["SEQ.NODPOS"][i_row+1]):
-                continue
-
+        # Iterate over nod A exposures
+        for i_row in self.header_data.index[nod_a_exp]:
             print(f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:")
             sof_file = pathlib.Path(self.product_folder / f"files_{count_exp:03d}.sof")
 
             sof_open = open(sof_file, "w", encoding="utf-8")
 
             file_0 = self.header_data["ORIGFILE"][i_row]
-            file_1 = self.header_data["ORIGFILE"][i_row+1]
+
+            if self.header_data["SEQ.NODPOS"][i_row+1] == "B":
+                # AB pair, so using the next exposure for B
+                file_1 = self.header_data["ORIGFILE"][i_row+1]
+
+            elif self.header_data["SEQ.NODPOS"][i_row-1] == "B":
+                # BA pair, so using the previous exposure for B
+                file_1 = self.header_data["ORIGFILE"][i_row-1]
+
+            else:
+                warnings.warn(f"Can not find nod B data to use "
+                              f"in combination with the nod A "
+                              f"data of {file_0} so will skip "
+                              f"this file.")
 
             file_path_0 = f"{self.path}/raw/{file_0}"
             file_path_1 = f"{self.path}/raw/{file_1}"
@@ -3052,12 +3059,9 @@ class Pipeline:
             header_1 = fits.getheader(file_path_1)
 
             if "ESO DPR TECH" in header_0:
-                nod_0 = self.header_data["SEQ.NODPOS"][i_row]
-                nod_1 = self.header_data["SEQ.NODPOS"][i_row+1]
-
                 if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
-                    self._update_files("OBS_NODDING_OTHER", file_path_1)
+                    self._update_files("OBS_NODDING_OTHER", file_path_0)
 
                     sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
                     self._update_files("OBS_NODDING_OTHER", file_path_1)
@@ -3258,9 +3262,6 @@ class Pipeline:
             fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
 
-            # fits_file = self.product_folder / f"cr2res_obs_nodding_throughput_{count_exp:03d}.fits"
-            # self._update_files("OBS_NODDING_THROUGHPUT", str(fits_file))
-
             count_exp += 1
 
         # Write updated dictionary to JSON file
@@ -3313,7 +3314,7 @@ class Pipeline:
             print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
 
         else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"            
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
             print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
         print("\nOutput files:")
@@ -3723,7 +3724,7 @@ class Pipeline:
 
         # Read telluric model
 
-        print(f"Reading telluric model spectrum...", end="", flush=True)
+        print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
 
@@ -3859,12 +3860,15 @@ class Pipeline:
         count = 0
 
         while True:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits"
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
+                      + f"extracted{nod_ab}_{count:03d}.fits"
 
             if not pathlib.Path(fits_file).exists():
                 break
 
-            print(f"Reading nod {nod_ab} from cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits", end="", flush=True)
+            print(f"Reading nod {nod_ab} from cr2res_obs_"
+                  f"nodding_extracted{nod_ab}_{count:03d}.fits",
+                  end="", flush=True)
 
             spec_data = []
 
@@ -3941,13 +3945,15 @@ class Pipeline:
         self._print_section("Plot spectra")
 
         if corrected:
-            fits_file = (
-                f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr_{file_id:03d}.fits"
-            )
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
+                      + f"extracted{nod_ab}_corr_{file_id:03d}.fits"
+
             print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_corr_{file_id:03d}.fits")
 
         else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits"
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
+                      + f"extracted{nod_ab}_{file_id:03d}.fits"
+
             print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits")
 
         print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
