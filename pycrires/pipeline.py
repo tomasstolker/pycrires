@@ -1009,7 +1009,6 @@ class Pipeline:
 
         key_file = os.path.dirname(__file__) + "/keywords.txt"
         keywords = np.genfromtxt(key_file, dtype="str", delimiter=",")
-        print(os.listdir())
 
         raw_files = pathlib.Path(self.path / "raw").glob("*.fits")
 
@@ -3699,7 +3698,6 @@ class Pipeline:
 
     @typechecked
     def correct_wavelengths(self, nod_ab: str = "A") -> None:
-        from scipy.ndimage import gaussian_filter1d
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
@@ -3728,86 +3726,90 @@ class Pipeline:
         print(f"Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-        print(transm_spec)
+        
+        transm_interp = interpolate.interp1d(
+            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        )
 
         print(" [DONE]")
 
         # Read extracted spectra
 
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_000.fits"
+        fits_files = list(self.file_dict[f'OBS_NODDING_EXTRACT{nod_ab}'].keys())
+        #print(files)
+
+        #fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_000.fits"
         #fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        for fits_file in fits_files:
 
-        print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
+            print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
 
-        hdu_list = fits.open(fits_file)
+            hdu_list = fits.open(fits_file)
 
-        print(" [DONE]")
+            print(" [DONE]")
 
-        transm_interp = interpolate.interp1d(
-            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        )
 
-        for i_det in range(3):
-            # Get detector data
-            data = hdu_list[f"CHIP{i_det+1}.INT1"].data
+            for i_det in range(3):
+                # Get detector data
+                data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
-            # Get all spectral orders
-            spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+                # Get all spectral orders
+                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
 
-            print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
+                print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
 
-            # Loop over spectral orders
-            for spec_name in spec_orders:
-                # Extract WL, SPEC, and ERR for given order/detector
-                wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
-                spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
-                err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
+                # Loop over spectral orders
+                for spec_name in spec_orders:
+                    # Extract WL, SPEC, and ERR for given order/detector
+                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
+                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-                #Remove continuum and nans of spectra
-                nans = np.isnan(spec)
-                continuum = gaussian_filter1d(spec[~nans], 100, mode='reflect')
-                spec_flat = spec[~nans]/continuum - 1
+                    #Remove continuum and nans of spectra
+                    nans = np.isnan(spec)
+                    continuum = ndimage.gaussian_filter1d(spec[~nans], 100, mode='reflect')
+                    spec_flat = spec[~nans]/continuum - 1
 
-                #Don't use the edges as that sometimes gives problems
-                spec_flat = spec_flat[20:-20]
-                used_wavel = wavel[~nans][20:-20]
-                
-                #Prepare cross-correlation grid
-                a_grid = np.linspace(0.9, 1.1, 200)[:,np.newaxis, np.newaxis]
-                b_grid = np.linspace(-0.5,0.5, 200)[np.newaxis,:, np.newaxis]
-                mean_wavel = np.mean(wavel)
-                wl_matrix = a_grid * (used_wavel[np.newaxis,np.newaxis,:]-mean_wavel) + mean_wavel + b_grid
-                template = transm_interp(wl_matrix) - 1
-                template_std = np.mean(np.std(template, axis=-1))
+                    #Don't use the edges as that sometimes gives problems
+                    spec_flat = spec_flat[20:-20]
+                    used_wavel = wavel[~nans][20:-20]
+                    
+                    #Prepare cross-correlation grid
+                    a_grid = np.linspace(0.9, 1.1, 100)[:,np.newaxis, np.newaxis]
+                    b_grid = np.linspace(-0.5,0.5, 100)[np.newaxis,:, np.newaxis]
+                    mean_wavel = np.mean(wavel)
+                    wl_matrix = a_grid * (used_wavel[np.newaxis,np.newaxis,:] - mean_wavel) + mean_wavel + b_grid
+                    template = transm_interp(wl_matrix) - 1
+                    template_std = np.mean(np.std(template, axis=-1))
 
-                #Check if there are enough telluric features in this wavelength range
-                if template_std>0.01:
-                    #cross-correlation
-                    cross_corr = template.dot(spec_flat)
+                    #Check if there are enough telluric features in this wavelength range
+                    if template_std>0.01:
+                        #cross-correlation
+                        cross_corr = template.dot(spec_flat)
 
-                    #Find optimal wavelength solution
-                    opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
-                    opt_a = a_grid[opt_idx[0],0,0]
-                    opt_b = b_grid[0,opt_idx[1],0]
-                else:
-                    opt_a = 1.
-                    opt_b = 0.
-                
-                print(
-                    f"   - {spec_name} -> lambda = {opt_b:.4f} "
-                    f"+ {opt_a:.4f} * lambda'"
-                )
+                        #Find optimal wavelength solution
+                        opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
+                        opt_a = a_grid[opt_idx[0],0,0]
+                        opt_b = b_grid[0,opt_idx[1],0]
+                    else:
+                        opt_a = 1.
+                        opt_b = 0.
+                    
+                    print(
+                        f"   - {spec_name} -> lambda = {opt_b:.4f} "
+                        f"+ {opt_a:.4f} * lambda'"
+                    )
 
-                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                   opt_a*(wavel-mean_wavel) - mean_wavel + opt_b 
-                )
+                    hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                    opt_a*(wavel-mean_wavel) - mean_wavel + opt_b 
+                    )
 
-        # Write the corrected spectra to a new FITS file
+            # Write the corrected spectra to a new FITS file
 
-        out_file = f"products/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
-        print(f"\nStoring corrected spectra: {out_file}")
+            out_file = f"products/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+            print(f"\nStoring corrected spectra: {out_file}")
 
-        hdu_list.writeto(fits_file[:-5] + "_corr.fits", overwrite=True)
+            hdu_list.writeto(fits_file[:-5] + "_corr.fits", overwrite=True)
 
     @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:
