@@ -3697,7 +3697,14 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def correct_wavelengths(self, nod_ab: str = "A") -> None:
+    def correct_wavelengths(
+        self, 
+        nod_ab: str = "A",
+        accuracy: float = 0.01,
+        smoothing_kernel_width: int = 201,
+        minimum_telluric_feature_strength: float = 0.01,
+        create_plots: bool = False,
+    ) -> None:
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
@@ -3709,6 +3716,16 @@ class Pipeline:
         nod_ab : str
             Nod position with the spectra of which the wavelength
             solution will be corrected.
+        accuracy : float
+            Desired accuracy in nm of the wavelength solution.
+            This will be used to generate the grid on which the correlation with
+            a telluric spectrum is generated.
+        smoothing_kernel_width : int
+            Width of the kernel used to remove the continuum.
+        minimum_telluric_feature_strenght: float
+            Minimum standard deviation of the telluric spectrum in the wavelength range
+            of the spectral order to apply the wavelength correction. If there are not
+            enough features, the old wavelength solution will be saved.
 
         Returns
         -------
@@ -3718,6 +3735,10 @@ class Pipeline:
 
         self._print_section("Correct wavelength solution")
 
+        output_dir = self.calib_folder / "wavelength_correction"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         print("Model file: run_skycalc/transm_spec.dat")
         print(f"Spectrum file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
@@ -3726,7 +3747,6 @@ class Pipeline:
         print(f"Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-        
         transm_interp = interpolate.interp1d(
             transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
         )
@@ -3736,18 +3756,17 @@ class Pipeline:
         # Read extracted spectra
 
         fits_files = list(self.file_dict[f'OBS_NODDING_EXTRACT{nod_ab}'].keys())
-        #print(files)
 
-        #fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_000.fits"
-        #fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
         for fits_file in fits_files:
 
-            print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
+            print(f"Reading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
 
             print(" [DONE]")
 
+            if create_plots:
+                fig, axes = plt.subplots(7, 3, figsize=(9, 15), sharex=True, sharey=True)
 
             for i_det in range(3):
                 # Get detector data
@@ -3759,57 +3778,85 @@ class Pipeline:
                 print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
 
                 # Loop over spectral orders
-                for spec_name in spec_orders:
+                for order, spec_name in enumerate(spec_orders):
                     # Extract WL, SPEC, and ERR for given order/detector
                     wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
                     spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
                     err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-                    #Remove continuum and nans of spectra
+                    # Remove continuum and nans of spectra
                     nans = np.isnan(spec)
-                    continuum = ndimage.gaussian_filter1d(spec[~nans], 100, mode='reflect')
+                    continuum = signal.savgol_filter(spec[~nans], smoothing_kernel_width, polyorder=2)
                     spec_flat = spec[~nans]/continuum - 1
 
-                    #Don't use the edges as that sometimes gives problems
+                    # Don't use the edges as that sometimes gives problems
                     spec_flat = spec_flat[20:-20]
                     used_wavel = wavel[~nans][20:-20]
-                    
-                    #Prepare cross-correlation grid
-                    a_grid = np.linspace(0.9, 1.1, 100)[:,np.newaxis, np.newaxis]
-                    b_grid = np.linspace(-0.5,0.5, 100)[np.newaxis,:, np.newaxis]
+
+                    # Prepare cross-correlation grid
+                    dlam = (wavel[-1]-np.mean(wavel))/2
+                    da = accuracy/dlam
+                    a_grid = np.linspace(0.9, 1.1, int(0.2/da))[:, np.newaxis, np.newaxis]
+                    b_grid = np.linspace(-0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
                     mean_wavel = np.mean(wavel)
-                    wl_matrix = a_grid * (used_wavel[np.newaxis,np.newaxis,:] - mean_wavel) + mean_wavel + b_grid
+                    wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :] - mean_wavel) + mean_wavel + b_grid
                     template = transm_interp(wl_matrix) - 1
                     template_std = np.mean(np.std(template, axis=-1))
 
-                    #Check if there are enough telluric features in this wavelength range
-                    if template_std>0.01:
-                        #cross-correlation
+                    # Check if there are enough telluric features in this wavelength range
+                    if template_std > minimum_telluric_feature_strength:
+                        # cross-correlation
                         cross_corr = template.dot(spec_flat)
 
-                        #Find optimal wavelength solution
+                        # Find optimal wavelength solution
                         opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
-                        opt_a = a_grid[opt_idx[0],0,0]
-                        opt_b = b_grid[0,opt_idx[1],0]
+                        opt_a = a_grid[opt_idx[0], 0, 0]
+                        opt_b = b_grid[0, opt_idx[1], 0]
+
+                        # Plot correlation map
+                        if create_plots:
+                            plt.sca(axes[order, i_det])
+                            plt.title(f'Detector {i_det+1}, order {order}')
+                            plt.imshow(cross_corr, extent=[-0.5, 0.5, 0.9, 1.1], origin='lower',
+                                       aspect='auto')
+                            plt.colorbar()
+                            plt.axhline(opt_a, ls='--', color='white')
+                            plt.axvline(opt_b, ls='--', color='white')
+
                     else:
+                        print("WARNING: Not enough telluric features to correct wavelength"
+                              f" for detector {i_det} and order {spec_name}")
                         opt_a = 1.
                         opt_b = 0.
-                    
+                        if create_plots:
+                            plt.sca(axes[order, i_det])
+                            plt.axis('off')
+
                     print(
                         f"   - {spec_name} -> lambda = {opt_b:.4f} "
                         f"+ {opt_a:.4f} * lambda'"
                     )
 
                     hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                    opt_a*(wavel-mean_wavel) - mean_wavel + opt_b 
+                        opt_a*(wavel-mean_wavel) + mean_wavel + opt_b 
                     )
 
             # Write the corrected spectra to a new FITS file
 
-            out_file = f"products/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+            out_file = fits_file[:-5] + "_corr.fits"
             print(f"\nStoring corrected spectra: {out_file}")
 
-            hdu_list.writeto(fits_file[:-5] + "_corr.fits", overwrite=True)
+            hdu_list.writeto(out_file, overwrite=True)
+
+            # Save the correlation plot
+            if create_plots:
+                fig.add_subplot(111, frame_on=False)
+                plt.tick_params(labelcolor="none", bottom=False, left=False)
+                plt.ylabel("Slope", fontsize=16)
+                plt.xlabel("Offset [nm]", fontsize=16)
+                out_label = fits_file[-10:-5]
+                plt.tight_layout()
+                plt.savefig(f'{output_dir}/correlation_map_{out_label}.png')
 
     @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:
