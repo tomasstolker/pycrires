@@ -3787,7 +3787,7 @@ class Pipeline:
                     # Remove continuum and nans of spectra
                     nans = np.isnan(spec)
                     continuum = signal.savgol_filter(spec[~nans], smoothing_kernel_width, polyorder=2)
-                    spec_flat = spec[~nans]/continuum - 1
+                    spec_flat = spec[~nans]/continuum - 1.
 
                     # Don't use the edges as that sometimes gives problems
                     spec_flat = spec_flat[20:-20]
@@ -3800,7 +3800,7 @@ class Pipeline:
                     b_grid = np.linspace(-0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
                     mean_wavel = np.mean(wavel)
                     wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :] - mean_wavel) + mean_wavel + b_grid
-                    template = transm_interp(wl_matrix) - 1
+                    template = transm_interp(wl_matrix) - 1.
                     template_std = np.mean(np.std(template, axis=-1))
 
                     # Check if there are enough telluric features in this wavelength range
