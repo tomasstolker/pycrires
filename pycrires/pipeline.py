@@ -3702,7 +3702,7 @@ class Pipeline:
         nod_ab: str = "A",
         accuracy: float = 0.01,
         smoothing_kernel_width: int = 201,
-        minimum_telluric_feature_strength: float = 0.01,
+        minimum_telluric_feature_strength: float = 0.005,
         create_plots: bool = False,
     ) -> None:
         """
