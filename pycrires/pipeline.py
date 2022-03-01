@@ -23,7 +23,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from scipy import interpolate, ndimage, optimize, signal
+from scipy import interpolate, ndimage, signal
 from typeguard import typechecked
 
 
@@ -3056,7 +3056,7 @@ class Pipeline:
             file_path_1 = f"{self.path}/raw/{file_1}"
 
             header_0 = fits.getheader(file_path_0)
-            header_1 = fits.getheader(file_path_1)
+            # header_1 = fits.getheader(file_path_1)
 
             if "ESO DPR TECH" in header_0:
                 if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
@@ -3075,7 +3075,8 @@ class Pipeline:
 
             else:
                 raise RuntimeError(
-                    f"Could not find ESO.DPR.TECH in the header of {item}."
+                    f"Could not find ESO.DPR.TECH in "
+                    f"the header of {file_path_0}."
                 )
 
             # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
@@ -3698,7 +3699,14 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def correct_wavelengths(self, nod_ab: str = "A") -> None:
+    def correct_wavelengths(
+        self,
+        nod_ab: str = "A",
+        accuracy: float = 0.01,
+        window_length: int = 201,
+        minimum_strength: float = 0.005,
+        create_plots: bool = False,
+    ) -> None:
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
@@ -3710,6 +3718,26 @@ class Pipeline:
         nod_ab : str
             Nod position with the spectra of which the wavelength
             solution will be corrected.
+        accuracy : float
+            Desired accuracy in nm of the wavelength solution.
+            This will be used to generate the grid on which the
+            correlation with a telluric spectrum is calculated
+            (default: 0.01 nm).
+        window_length : int
+            Width of the kernel (in number of pixels) that is used
+            for estimating the continuum by smoothing with the 2nd
+            order Savitzky-Golay filter from
+            ``scipy.signal.savgol_filter`` (default: 201).
+        minimum_strength : float
+            Minimum standard deviation of the telluric spectrum in
+            the wavelength range of the spectral order that is used
+            as threshold for applying the wavelength correction. If
+            there are not enough features (i.e. the standard
+            deviation is smaller than ``minimum_strength``), the
+            original wavelength solution will be saved (default:
+            0.005).
+        create_plots : bool
+            Create plots with the correlation maps (default: False).
 
         Returns
         -------
@@ -3719,6 +3747,11 @@ class Pipeline:
 
         self._print_section("Correct wavelength solution")
 
+        output_dir = self.calib_folder / "correct_wavelengths"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         print("Model file: run_skycalc/transm_spec.dat")
         print(f"Spectrum file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
@@ -3727,108 +3760,129 @@ class Pipeline:
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
+        transm_interp = interpolate.interp1d(
+            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        )
 
         print(" [DONE]")
 
         # Read extracted spectra
 
-        fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
+        fits_files = list(self.file_dict[f'OBS_NODDING_EXTRACT{nod_ab}'].keys())
 
-        print(f"Reading spectra of nod {nod_ab}...", end="", flush=True)
+        for fits_file in fits_files:
 
-        hdu_list = fits.open(fits_file)
+            print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
-        print(" [DONE]")
+            hdu_list = fits.open(fits_file)
 
-        # Objective function for maximizing the correlation
-        # with the telluric model spectrum from SkyCalc
+            print(" [DONE]")
 
-        def corr_func(param, *args):
-            obs_spec, model_interp = args[0], args[1]
-            wavel_new = param[0] + param[1] * obs_spec[:, 0]  # (nm)
+            if create_plots:
+                fig, axes = plt.subplots(
+                    7, 3, figsize=(9, 15), sharex=True, sharey=True)
 
-            try:
-                model_spec = model_interp(wavel_new)
-                corr_value = -1.0 * np.sum(
-                    obs_spec[:, 1] / np.median(obs_spec[:, 1]) * model_spec
-                )
+            for i_det in range(3):
+                # Get detector data
+                data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
-            except ValueError:
-                corr_value = np.inf
+                # Get all spectral orders
+                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
 
-            # method, times = signal.choose_conv_method(
-            #     obs_spec[:, 1], model_spec, mode="valid", measure=True
-            # )
+                print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
 
-            # corr = signal.correlate(
-            #     obs_spec[:, 1] / np.median(obs_spec[:, 1]),
-            #     model_spec / np.median(model_spec),
-            #     mode="valid",
-            #     method="direct",
-            # )
+                # Loop over spectral orders
+                for order, spec_name in enumerate(spec_orders):
+                    # Extract WL, SPEC, and ERR for given order/detector
+                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
+                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+                    # err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-            return corr_value
+                    # Remove continuum and nans of spectra.
+                    # The continuum is estimated by smoothing the
+                    # spectrum with a 2nd order Savitzky-Golay filter
+                    nans = np.isnan(spec)
+                    continuum = signal.savgol_filter(
+                        spec[~nans], window_length=window_length,
+                        polyorder=2, mode='interp')
+                    spec_flat = spec[~nans]/continuum - 1.
 
-        transm_interp = interpolate.interp1d(
-            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        )
+                    # Don't use the edges as that sometimes gives problems
+                    spec_flat = spec_flat[20:-20]
+                    used_wavel = wavel[~nans][20:-20]
 
-        for i_det in range(3):
-            # Get detector data
-            data = hdu_list[f"CHIP{i_det+1}.INT1"].data
+                    # Prepare cross-correlation grid
+                    dlam = (wavel[-1]-np.mean(wavel))/2
+                    da = accuracy/dlam
+                    a_grid = np.linspace(
+                        0.9, 1.1, int(0.2/da))[:, np.newaxis, np.newaxis]
+                    b_grid = np.linspace(
+                        -0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
+                    mean_wavel = np.mean(wavel)
+                    wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :]
+                                          - mean_wavel) + mean_wavel + b_grid
+                    template = transm_interp(wl_matrix) - 1.
+                    template_std = np.mean(np.std(template, axis=-1))
 
-            # Get all spectral orders
-            spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+                    # Check if there are enough telluric
+                    # features in this wavelength range
+                    if template_std > minimum_strength:
+                        # Calculate the cross-correlation
+                        # between data and template
+                        cross_corr = template.dot(spec_flat)
 
-            print(f"\nCorrecting wavelength solution of detector {i_det+1}:")
+                        # Find optimal wavelength solution
+                        opt_idx = np.unravel_index(
+                            np.argmax(cross_corr), cross_corr.shape)
+                        opt_a = a_grid[opt_idx[0], 0, 0]
+                        opt_b = b_grid[0, opt_idx[1], 0]
 
-            # Loop over spectral orders
-            for spec_name in spec_orders:
-                # Extract WL, SPEC, and ERR for given order/detector
-                wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
-                spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
-                err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
+                        # Plot correlation map
+                        if create_plots:
+                            plt.sca(axes[order, i_det])
+                            plt.title(f'Detector {i_det+1}, order {order}')
+                            plt.imshow(
+                                cross_corr, extent=[-0.5, 0.5, 0.9, 1.1],
+                                origin='lower', aspect='auto')
+                            plt.colorbar()
+                            plt.axhline(opt_a, ls='--', color='white')
+                            plt.axvline(opt_b, ls='--', color='white')
 
-                spec = np.nan_to_num(spec)
-                err = np.nan_to_num(err)
+                    else:
+                        print("WARNING: Not enough telluric features to correct wavelength"
+                              f" for detector {i_det} and order {spec_name}")
+                        opt_a = 1.
+                        opt_b = 0.
 
-                spec_data = np.column_stack([wavel, spec, err])
+                        if create_plots:
+                            plt.sca(axes[order, i_det])
+                            plt.axis('off')
 
-                # spec_filt = signal.medfilt(spec, kernel_size=201)
-                # poly_coef = np.polyfit(wavel, spec_filt, 3)
-                # poly_spec = np.poly1d(poly_coef)
-                # spec_data[:, 1] /= poly_spec(wavel)
-
-                opt_result = optimize.minimize(
-                    corr_func,
-                    x0=(0.01, 1.0),
-                    args=(spec_data, transm_interp),
-                    method="Nelder-Mead",
-                    bounds=((-1.0, 1.0), (1.0, 1.0)),
-                    options={"maxiter": 1000, "xatol": 1e-4, "fatol": np.inf},
-                )
-
-                print(
-                    f"   - {spec_name} -> lambda = {opt_result.x[0]:.4f} "
-                    f"+ {opt_result.x[1]:.1f} * lambda'"
-                )
-
-                if not opt_result.success:
-                    warnings.warn(
-                        f"Could not converge with correcting the "
-                        f"wavelength solution of {spec_name[:-3]}."
+                    print(
+                        f"   - {spec_name} -> lambda = {opt_b:.4f} "
+                        f"+ {opt_a:.4f} * lambda'"
                     )
 
-                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                    opt_result.x[0] + opt_result.x[1] * spec_data[:, 0]
-                )
+                    hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                        opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
+                    )
 
-        # Write the corrected spectra to a new FITS file
+            # Write the corrected spectra to a new FITS file
 
-        out_file = f"products/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
-        print(f"\nStoring corrected spectra: {out_file}")
+            out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
+            print(f"\nStoring corrected spectra: {out_file}")
 
-        hdu_list.writeto(fits_file[:-5] + "_corr.fits", overwrite=True)
+            hdu_list.writeto(out_file, overwrite=True)
+
+            # Save the correlation plots
+            if create_plots:
+                fig.add_subplot(111, frame_on=False)
+                plt.tick_params(labelcolor="none", bottom=False, left=False)
+                plt.ylabel("Slope", fontsize=16)
+                plt.xlabel("Offset [nm]", fontsize=16)
+                out_label = fits_file[-10:-5]
+                plt.tight_layout()
+                plt.savefig(f'{output_dir}/correlation_map_{out_label}.png')
 
     @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:
