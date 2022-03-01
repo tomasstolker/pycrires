@@ -3965,7 +3965,10 @@ class Pipeline:
 
     @typechecked
     def plot_spectra(
-        self, nod_ab: str = "A", telluric: bool = True, corrected: bool = False, file_id: int = 0
+        self, nod_ab: str = "A",
+        telluric: bool = True,
+        corrected: bool = False,
+        file_id: int = 0
     ) -> None:
         """
         Method for plotting the extracted spectra.
@@ -3999,10 +4002,11 @@ class Pipeline:
         self._print_section("Plot spectra")
 
         if corrected:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
-                      + f"extracted{nod_ab}_corr_{file_id:03d}.fits"
+            fits_file = f"{self.path}/calib/correct_wavelengths/" \
+                      + f"cr2res_obs_nodding_extracted{nod_ab}_" \
+                      + f"{file_id:03d}_corr.fits"
 
-            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_corr_{file_id:03d}.fits")
+            print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}_corr.fits")
 
         else:
             fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
@@ -4101,11 +4105,12 @@ class Pipeline:
             plt.tight_layout()
 
             if corrected:
-                plot_file = (
-                    f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_corr_{file_id:03d}.png"
-                )
+                plot_file = f"{self.path}/calib/correct_wavelengths/" \
+                          + f"spectra_nod_{nod_ab}_det_{i+1}_corr_" \
+                          + f"{file_id:03d}.png"
             else:
-                plot_file = f"{self.path}/product/spectra_nod_{nod_ab}_det_{i+1}_{file_id:03d}.png"
+                plot_file = f"{self.path}/product/spectra_nod_" \
+                          + f"{nod_ab}_det_{i+1}_{file_id:03d}.png"
 
             plt.savefig(plot_file, dpi=300)
             plt.clf()
