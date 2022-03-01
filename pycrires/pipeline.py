@@ -23,7 +23,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from scipy import interpolate, ndimage, optimize, signal
+from scipy import interpolate, ndimage, signal
 from typeguard import typechecked
 
 
@@ -3031,7 +3031,8 @@ class Pipeline:
                 if item_row["SEQ.NODPOS"] not in ["A", "B"]:
                     continue
 
-                elif self.header_data["SEQ.NODPOS"][i_row] == self.header_data["SEQ.NODPOS"][i_row+1]:
+                elif self.header_data["SEQ.NODPOS"][i_row] == \
+                        self.header_data["SEQ.NODPOS"][i_row+1]:
                     continue
 
             elif np.isnan(self.header_data["SEQ.NODPOS"][i_row+1]):
@@ -3049,11 +3050,11 @@ class Pipeline:
             file_path_1 = f"{self.path}/raw/{file_1}"
 
             header_0 = fits.getheader(file_path_0)
-            header_1 = fits.getheader(file_path_1)
+            # header_1 = fits.getheader(file_path_1)
 
             if "ESO DPR TECH" in header_0:
-                nod_0 = self.header_data["SEQ.NODPOS"][i_row]
-                nod_1 = self.header_data["SEQ.NODPOS"][i_row+1]
+                # nod_0 = self.header_data["SEQ.NODPOS"][i_row]
+                # nod_1 = self.header_data["SEQ.NODPOS"][i_row+1]
 
                 if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
@@ -3071,7 +3072,8 @@ class Pipeline:
 
             else:
                 raise RuntimeError(
-                    f"Could not find ESO.DPR.TECH in the header of {item}."
+                    f"Could not find ESO.DPR.TECH in "
+                    f"the header of {file_path_0}."
                 )
 
             # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
@@ -3313,7 +3315,7 @@ class Pipeline:
             print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
 
         else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"            
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
             print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
         print("\nOutput files:")
@@ -3698,11 +3700,11 @@ class Pipeline:
 
     @typechecked
     def correct_wavelengths(
-        self, 
+        self,
         nod_ab: str = "A",
         accuracy: float = 0.01,
-        smoothing_kernel_width: int = 201,
-        minimum_telluric_feature_strength: float = 0.005,
+        window_length: int = 201,
+        minimum_strength: float = 0.005,
         create_plots: bool = False,
     ) -> None:
         """
@@ -3718,14 +3720,24 @@ class Pipeline:
             solution will be corrected.
         accuracy : float
             Desired accuracy in nm of the wavelength solution.
-            This will be used to generate the grid on which the correlation with
-            a telluric spectrum is generated.
-        smoothing_kernel_width : int
-            Width of the kernel used to remove the continuum.
-        minimum_telluric_feature_strenght: float
-            Minimum standard deviation of the telluric spectrum in the wavelength range
-            of the spectral order to apply the wavelength correction. If there are not
-            enough features, the old wavelength solution will be saved.
+            This will be used to generate the grid on which the
+            correlation with a telluric spectrum is calculated
+            (default: 0.01 nm).
+        window_length : int
+            Width of the kernel (in number of pixels) that is used
+            for estimating the continuum by smoothing with the 2nd
+            order Savitzky-Golay filter from
+            ``scipy.signal.savgol_filter`` (default: 201).
+        minimum_strength : float
+            Minimum standard deviation of the telluric spectrum in
+            the wavelength range of the spectral order that is used
+            as threshold for applying the wavelength correction. If
+            there are not enough features (i.e. the standard
+            deviation is smaller than ``minimum_strength``), the
+            original wavelength solution will be saved (default:
+            0.005).
+        create_plots : bool
+            Create plots with the correlation maps (default: False).
 
         Returns
         -------
@@ -3735,7 +3747,8 @@ class Pipeline:
 
         self._print_section("Correct wavelength solution")
 
-        output_dir = self.calib_folder / "wavelength_correction"
+        output_dir = self.calib_folder / "correct_wavelengths"
+
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -3744,7 +3757,7 @@ class Pipeline:
 
         # Read telluric model
 
-        print(f"Reading telluric model spectrum...", end="", flush=True)
+        print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
         transm_interp = interpolate.interp1d(
@@ -3759,14 +3772,15 @@ class Pipeline:
 
         for fits_file in fits_files:
 
-            print(f"Reading spectra from {fits_file}...", end="", flush=True)
+            print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
 
             print(" [DONE]")
 
             if create_plots:
-                fig, axes = plt.subplots(7, 3, figsize=(9, 15), sharex=True, sharey=True)
+                fig, axes = plt.subplots(
+                    7, 3, figsize=(9, 15), sharex=True, sharey=True)
 
             for i_det in range(3):
                 # Get detector data
@@ -3782,11 +3796,15 @@ class Pipeline:
                     # Extract WL, SPEC, and ERR for given order/detector
                     wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
                     spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
-                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
+                    # err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-                    # Remove continuum and nans of spectra
+                    # Remove continuum and nans of spectra.
+                    # The continuum is estimated by smoothing the
+                    # spectrum with a 2nd order Savitzky-Golay filter
                     nans = np.isnan(spec)
-                    continuum = signal.savgol_filter(spec[~nans], smoothing_kernel_width, polyorder=2)
+                    continuum = signal.savgol_filter(
+                        spec[~nans], window_length=window_length,
+                        polyorder=2, mode='interp')
                     spec_flat = spec[~nans]/continuum - 1.
 
                     # Don't use the edges as that sometimes gives problems
@@ -3796,20 +3814,26 @@ class Pipeline:
                     # Prepare cross-correlation grid
                     dlam = (wavel[-1]-np.mean(wavel))/2
                     da = accuracy/dlam
-                    a_grid = np.linspace(0.9, 1.1, int(0.2/da))[:, np.newaxis, np.newaxis]
-                    b_grid = np.linspace(-0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
+                    a_grid = np.linspace(
+                        0.9, 1.1, int(0.2/da))[:, np.newaxis, np.newaxis]
+                    b_grid = np.linspace(
+                        -0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
                     mean_wavel = np.mean(wavel)
-                    wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :] - mean_wavel) + mean_wavel + b_grid
+                    wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :]
+                                          - mean_wavel) + mean_wavel + b_grid
                     template = transm_interp(wl_matrix) - 1.
                     template_std = np.mean(np.std(template, axis=-1))
 
-                    # Check if there are enough telluric features in this wavelength range
-                    if template_std > minimum_telluric_feature_strength:
-                        # cross-correlation
+                    # Check if there are enough telluric
+                    # features in this wavelength range
+                    if template_std > minimum_strength:
+                        # Calculate the cross-correlation
+                        # between data and template
                         cross_corr = template.dot(spec_flat)
 
                         # Find optimal wavelength solution
-                        opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
+                        opt_idx = np.unravel_index(
+                            np.argmax(cross_corr), cross_corr.shape)
                         opt_a = a_grid[opt_idx[0], 0, 0]
                         opt_b = b_grid[0, opt_idx[1], 0]
 
@@ -3817,8 +3841,9 @@ class Pipeline:
                         if create_plots:
                             plt.sca(axes[order, i_det])
                             plt.title(f'Detector {i_det+1}, order {order}')
-                            plt.imshow(cross_corr, extent=[-0.5, 0.5, 0.9, 1.1], origin='lower',
-                                       aspect='auto')
+                            plt.imshow(
+                                cross_corr, extent=[-0.5, 0.5, 0.9, 1.1],
+                                origin='lower', aspect='auto')
                             plt.colorbar()
                             plt.axhline(opt_a, ls='--', color='white')
                             plt.axvline(opt_b, ls='--', color='white')
@@ -3828,6 +3853,7 @@ class Pipeline:
                               f" for detector {i_det} and order {spec_name}")
                         opt_a = 1.
                         opt_b = 0.
+
                         if create_plots:
                             plt.sca(axes[order, i_det])
                             plt.axis('off')
@@ -3838,17 +3864,17 @@ class Pipeline:
                     )
 
                     hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                        opt_a*(wavel-mean_wavel) + mean_wavel + opt_b 
+                        opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
                     )
 
             # Write the corrected spectra to a new FITS file
 
-            out_file = fits_file[:-5] + "_corr.fits"
+            out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
             print(f"\nStoring corrected spectra: {out_file}")
 
             hdu_list.writeto(out_file, overwrite=True)
 
-            # Save the correlation plot
+            # Save the correlation plots
             if create_plots:
                 fig.add_subplot(111, frame_on=False)
                 plt.tick_params(labelcolor="none", bottom=False, left=False)
@@ -3888,12 +3914,15 @@ class Pipeline:
         count = 0
 
         while True:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits"
+            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
+                      + f"extracted{nod_ab}_{count:03d}.fits"
 
             if not pathlib.Path(fits_file).exists():
                 break
 
-            print(f"Reading nod {nod_ab} from cr2res_obs_nodding_extracted{nod_ab}_{count:03d}.fits", end="", flush=True)
+            print(f"Reading nod {nod_ab} from cr2res_obs_nodding_"
+                  f"extracted{nod_ab}_{count:03d}.fits",
+                  end="", flush=True)
 
             spec_data = []
 
