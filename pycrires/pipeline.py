@@ -470,6 +470,12 @@ class Pipeline:
                         "cr2res.cr2res_util_wave.wl_method=ETALON",
                     )
 
+            elif eso_recipe == "cr2res_obs_nodding":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_obs_nodding.extract_oversample=7",
+                    "cr2res.cr2res_obs_nodding.extract_oversample=12",
+                )
+
             elif eso_recipe == "molecfit_model":
                 config_text = config_text.replace(
                     "USE_INPUT_KERNEL=TRUE",
@@ -3050,6 +3056,8 @@ class Pipeline:
                               f"in combination with the nod A "
                               f"data of {file_0} so will skip "
                               f"this file.")
+
+                continue
 
             file_path_0 = f"{self.path}/raw/{file_0}"
             file_path_1 = f"{self.path}/raw/{file_1}"

@@ -59,7 +59,7 @@ Do you want to make changes to the code? Please fork the ``pycrires`` repository
 EsoRex
 ------
 
-In addition to ``pycrires``, it is required to manually install `EsoRex <https://www.eso.org/sci/software/pipelines>`_, the `CRIRES+ recipes <https://www.eso.org/sci/software/pipelines/cr2res/cr2res-pipe-recipes.html>`_, and the `Molecfit recipes <https://www.eso.org/sci/software/pipelines/molecfit/molecfit-pipe-recipes.html>`_. There are recipes available for both the old and upgraded CRIRES instrument so it is important to follow the instructions for *CR2RES* instead of *CRIRES*. On macOS, it is most convenient to use `MacPorts <https://www.eso.org/sci/software/pipelines/installation/macports.html>`_ for installing both EsoRex and the recipes.
+In addition to ``pycrires``, it is required to manually install `EsoRex <https://www.eso.org/sci/software/pipelines>`_, the `CRIRES+ recipes <https://www.eso.org/sci/software/pipelines/cr2res/cr2res-pipe-recipes.html>`_, and the `Molecfit recipes <https://www.eso.org/sci/software/pipelines/molecfit/molecfit-pipe-recipes.html>`_. There are recipes available for both the old and upgraded CRIRES instrument so it is important to follow the instructions for *CR2RES* instead of *CRIRES*. On macOS, it is most convenient to use `MacPorts <https://www.eso.org/sci/software/pipelines/installation/macports.html>`_ for installing both ``EsoRex`` and the recipes.
 
 Testing `pycrires`
 ------------------
