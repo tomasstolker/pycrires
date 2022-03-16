@@ -2998,6 +2998,13 @@ class Pipeline:
 
         indices = self.header_data["DPR.CATG"] == "SCIENCE"
 
+        # Create output folder
+
+        output_dir = self.product_folder / "obs_nodding"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         # for i, item in enumerate(self.header_data["DPR.TYPE"]):
         #     if item != "OBJECT":
         #         indices[i] = False
@@ -3037,7 +3044,7 @@ class Pipeline:
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
             print(f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:")
-            sof_file = pathlib.Path(self.product_folder / f"files_{count_exp:03d}.sof")
+            sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}.sof")
 
             sof_open = open(sof_file, "w", encoding="utf-8")
 
@@ -3193,7 +3200,7 @@ class Pipeline:
             esorex = [
                 "esorex",
                 f"--recipe-config={config_file}",
-                f"--output-dir={self.product_folder}",
+                f"--output-dir={output_dir}",
                 "cr2res_obs_nodding",
                 sof_file,
             ]
@@ -3204,70 +3211,70 @@ class Pipeline:
                 stdout = subprocess.DEVNULL
                 print("Running EsoRex...", end="", flush=True)
 
-            subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
             if not verbose:
                 print(" [DONE]\n")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extracted_combined.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extracted_combined.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_A.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_trace_wave_A.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_B.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_trace_wave_B.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits")
 
             # Update file dictionary with output files
 
             print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
 
             count_exp += 1
@@ -3279,11 +3286,11 @@ class Pipeline:
 
         # Export the extracted spectrum to a JSON file
 
-        for nod in ["A", "B"]:
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
-
-            if os.path.exists(fits_file):
-                self.export_spectra(nod_ab=nod)
+        # for nod in ["A", "B"]:
+        #     fits_file = output_dir / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
+        #
+        #     if os.path.exists(fits_file):
+        #         self.export_spectra(nod_ab=nod)
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:

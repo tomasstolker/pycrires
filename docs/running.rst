@@ -3,7 +3,7 @@
 Running the pipeline
 ====================
 
-After installation of both ``pycrires`` and ``EsoRex`` (see :ref:`installation` section), we are now ready to start processing CRIRES data with the pipeline!
+After installation of both ``pycrires`` and ``EsoRex`` (see :ref:`installation` section), we are now ready to start processing `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data with the pipeline!
 
 Downloading data
 ----------------
@@ -28,7 +28,7 @@ After creating a :class:`~pycrires.pipeline.Pipeline` object, we can run all the
 
 A configuration file is generated when calling a :class:`~pycrires.pipeline.Pipeline` method for the first time. If needed, the configuration file can be adjusted, which will then be used when rerunning the same method.
 
-Below, there is an full example for reducing and calibrating the CRIRES+ data:
+Below, there is an full example for reducing and calibrating the `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data:
 
 .. code-block:: python
 
@@ -56,3 +56,6 @@ Below, there is an full example for reducing and calibrating the CRIRES+ data:
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
   pipeline.clean_folder(keep_product=False)
+
+.. tip::
+  The pipeline will automatically download any missing calibration files (e.g. dark frames with specific DIT). After downloading and uncompressing, it is important to rerun the pipeline such that the calibration files are included with the data reduction.
