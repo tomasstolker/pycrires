@@ -470,6 +470,12 @@ class Pipeline:
                         "cr2res.cr2res_util_wave.wl_method=ETALON",
                     )
 
+            elif eso_recipe == "cr2res_obs_nodding":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_obs_nodding.extract_oversample=7",
+                    "cr2res.cr2res_obs_nodding.extract_oversample=12",
+                )
+
             elif eso_recipe == "molecfit_model":
                 config_text = config_text.replace(
                     "USE_INPUT_KERNEL=TRUE",
@@ -1388,8 +1394,8 @@ class Pipeline:
                 if "CAL_DARK_MASTER" in self.file_dict:
                     for key, value in self.file_dict["CAL_DARK_MASTER"].items():
                         if not file_found and value["DIT"] == dit_item:
-                            file_name = key.split("/")[-1]
-                            print(f"   - calib/{file_name} CAL_DARK_MASTER")
+                            file_name = key.split("/")[-2:]
+                            print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_MASTER")
                             sof_open.write(f"{key} CAL_DARK_MASTER\n")
                             file_found = True
 
@@ -1403,8 +1409,8 @@ class Pipeline:
                 if "CAL_DARK_BPM" in self.file_dict:
                     for key, value in self.file_dict["CAL_DARK_BPM"].items():
                         if not file_found and value["DIT"] == dit_item:
-                            file_name = key.split("/")[-1]
-                            print(f"   - calib/{file_name} CAL_DARK_BPM")
+                            file_name = key.split("/")[-2:]
+                            print(f"   - calib/ CAL_DARK_BPM")
                             sof_open.write(f"{key} CAL_DARK_BPM\n")
                             file_found = True
 
@@ -1676,24 +1682,24 @@ class Pipeline:
             if "UTIL_TRACE_TW" in self.file_dict:
                 for key in self.file_dict["UTIL_TRACE_TW"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} UTIL_TRACE_TW")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_TRACE_TW")
                         sof_open.write(f"{key} UTIL_TRACE_TW\n")
                         file_found = True
 
             if "CAL_WAVE_TW" in self.file_dict:
                 for key in self.file_dict["CAL_WAVE_TW"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_WAVE_TW")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_WAVE_TW")
                         sof_open.write(f"{key} CAL_WAVE_TW\n")
                         file_found = True
 
             if "CAL_FLAT_TW" in self.file_dict:
                 for key in self.file_dict["CAL_FLAT_TW"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_FLAT_TW")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_TW")
                         sof_open.write(f"{key} CAL_FLAT_TW\n")
                         file_found = True
 
@@ -1707,8 +1713,8 @@ class Pipeline:
             if "EMISSION_LINES" in self.file_dict:
                 for key in self.file_dict["EMISSION_LINES"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} EMISSION_LINES")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} EMISSION_LINES")
                         sof_open.write(f"{key} EMISSION_LINES\n")
                         file_found = True
 
@@ -1899,8 +1905,8 @@ class Pipeline:
             if "CAL_DARK_MASTER" in self.file_dict:
                 for key, value in self.file_dict["CAL_DARK_MASTER"].items():
                     if not file_found and value["DIT"] == dit_item:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DARK_MASTER")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_MASTER")
                         sof_open.write(f"{key} CAL_DARK_MASTER\n")
                         file_found = True
 
@@ -1914,8 +1920,8 @@ class Pipeline:
             if "CAL_DARK_BPM" in self.file_dict:
                 for key, value in self.file_dict["CAL_DARK_BPM"].items():
                     if not file_found and value["DIT"] == dit_item:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DARK_BPM")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
                         sof_open.write(f"{key} CAL_DARK_BPM\n")
                         file_found = True
 
@@ -1931,9 +1937,9 @@ class Pipeline:
                 if "UTIL_MASTER_FLAT" in self.file_dict:
                     for key, value in self.file_dict["UTIL_MASTER_FLAT"].items():
                         if not file_found:
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_calib_flat/{file_name} UTIL_MASTER_FLAT"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
                             )
                             sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
                             file_found = True
@@ -1941,8 +1947,8 @@ class Pipeline:
                 if "CAL_FLAT_MASTER" in self.file_dict:
                     for key, value in self.file_dict["CAL_FLAT_MASTER"].items():
                         if not file_found:
-                            file_name = key.split("/")[-1]
-                            print(f"   - calib/cal_flat/{file_name} CAL_FLAT_MASTER")
+                            file_name = key.split("/")[-2:]
+                            print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER")
                             sof_open.write(f"{key} CAL_FLAT_MASTER\n")
                             file_found = True
 
@@ -1960,8 +1966,8 @@ class Pipeline:
             if "CAL_DETLIN_COEFFS" in self.file_dict:
                 for key, value in self.file_dict["CAL_DETLIN_COEFFS"].items():
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DETLIN_COEFFS")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_COEFFS")
                         sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
                         file_found = True
 
@@ -2060,8 +2066,8 @@ class Pipeline:
             for key in self.file_dict["UTIL_CALIB"]:
                 if not file_found:
                     with open(sof_file, "w", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/util_calib_flat/{file_name} UTIL_CALIB")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_CALIB")
                         sof_open.write(f"{key} UTIL_CALIB\n")
                         file_found = True
 
@@ -2206,8 +2212,8 @@ class Pipeline:
             for key in self.file_dict["UTIL_TRACE_TW"]:
                 if not file_found:
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/util_trace/{file_name} UTIL_TRACE_TW")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_TRACE_TW")
                         sof_open.write(f"{key} UTIL_TRACE_TW\n")
                         file_found = True
 
@@ -2332,9 +2338,9 @@ class Pipeline:
                 if not file_found:
                     if key.split("/")[-2] == f"util_calib_{calib_type}":
                         with open(sof_file, "w", encoding="utf-8") as sof_open:
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_calib_{calib_type}/{file_name} UTIL_CALIB"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_CALIB"
                             )
                             sof_open.write(f"{key} UTIL_CALIB\n")
                             file_found = True
@@ -2360,8 +2366,8 @@ class Pipeline:
         #     for key, value in self.file_dict["UTIL_TRACE_TW"].items():
         #         if not file_found:
         #             with open(sof_file, "a", encoding="utf-8") as sof_open:
-        #                 file_name = key.split("/")[-1]
-        #                 print(f"   - calib/util_trace/{file_name} UTIL_TRACE_TW")
+        #                 file_name = key.split("/")[-2:]
+        #                 print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_TRACE_TW")
         #                 sof_open.write(f"{key} UTIL_TRACE_TW\n")
         #                 file_found = True
         #
@@ -2380,8 +2386,8 @@ class Pipeline:
             for key in self.file_dict["UTIL_WAVE_TW"]:
                 if not file_found and key.split("/")[-2] == "util_wave_une":
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_CURV_TW")
                         sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                         file_found = True
 
@@ -2389,9 +2395,9 @@ class Pipeline:
             for key in self.file_dict["UTIL_SLIT_CURV_TW"]:
                 if not file_found:
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
+                        file_name = key.split("/")[-2:]
                         print(
-                            f"   - calib/util_slit_curv/{file_name} UTIL_SLIT_CURV_TW"
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_CURV_TW"
                         )
                         sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                         file_found = True
@@ -2509,8 +2515,8 @@ class Pipeline:
             for key in self.file_dict["UTIL_CALIB"]:
                 if not file_found:
                     with open(sof_file, "w", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/util_calib_flat/{file_name} UTIL_CALIB")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_CALIB")
                         sof_open.write(f"{key} UTIL_CALIB\n")
                         file_found = True
 
@@ -2529,9 +2535,9 @@ class Pipeline:
             for key in self.file_dict["UTIL_SLIT_MODEL"]:
                 if not file_found:
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
+                        file_name = key.split("/")[-2:]
                         print(
-                            f"   - calib/util_extract_flat/{file_name} UTIL_SLIT_MODEL"
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_MODEL"
                         )
                         sof_open.write(f"{key} UTIL_SLIT_MODEL\n")
                         file_found = True
@@ -2779,9 +2785,9 @@ class Pipeline:
                 for key in self.file_dict["EMISSION_LINES"]:
                     if not file_found:
                         with open(sof_file, "w", encoding="utf-8") as sof_open:
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_genlines/{file_name} EMISSION_LINES"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} EMISSION_LINES"
                             )
                             sof_open.write(f"{key} EMISSION_LINES\n")
                             file_found = True
@@ -2808,10 +2814,9 @@ class Pipeline:
                     and key.split("/")[-2] == f"util_extract_{calib_type}"
                 ):
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
-                        file_name = key.split("/")[-1]
+                        file_name = key.split("/")[-2:]
                         print(
-                            f"   - calib/util_extract_{calib_type}/"
-                            f"{file_name} UTIL_EXTRACT_1D"
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_EXTRACT_1D"
                         )
                         sof_open.write(f"{key} UTIL_EXTRACT_1D\n")
                         file_found = True
@@ -2839,9 +2844,9 @@ class Pipeline:
                 for key in self.file_dict["UTIL_WAVE_TW"]:
                     if not file_found and key.split("/")[-2] == "util_wave_une":
                         with open(sof_file, "a", encoding="utf-8") as sof_open:
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_wave_une/{file_name} UTIL_SLIT_CURV_TW"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_CURV_TW"
                             )
                             sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                             file_found = True
@@ -2850,9 +2855,9 @@ class Pipeline:
                 for key in self.file_dict["UTIL_SLIT_CURV_TW"]:
                     if not file_found:
                         with open(sof_file, "a", encoding="utf-8") as sof_open:
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_slit_curv/{file_name} UTIL_SLIT_CURV_TW"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_CURV_TW"
                             )
                             sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
                             file_found = True
@@ -2873,8 +2878,8 @@ class Pipeline:
                 for key in self.file_dict["UTIL_WAVE_TW"]:
                     if not file_found and key.split("/")[-2] == "util_wave_une":
                         with open(sof_file, "a", encoding="utf-8") as sof_open:
-                            file_name = key.split("/")[-1]
-                            print(f"   - calib/util_wave_une/{file_name} UTIL_WAVE_TW")
+                            file_name = key.split("/")[-2:]
+                            print(f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW")
                             sof_open.write(f"{key} UTIL_WAVE_TW\n")
                             file_found = True
 
@@ -2993,6 +2998,13 @@ class Pipeline:
 
         indices = self.header_data["DPR.CATG"] == "SCIENCE"
 
+        # Create output folder
+
+        output_dir = self.product_folder / "obs_nodding"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         # for i, item in enumerate(self.header_data["DPR.TYPE"]):
         #     if item != "OBJECT":
         #         indices[i] = False
@@ -3032,7 +3044,7 @@ class Pipeline:
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
             print(f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:")
-            sof_file = pathlib.Path(self.product_folder / f"files_{count_exp:03d}.sof")
+            sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}.sof")
 
             sof_open = open(sof_file, "w", encoding="utf-8")
 
@@ -3051,6 +3063,8 @@ class Pipeline:
                               f"in combination with the nod A "
                               f"data of {file_0} so will skip "
                               f"this file.")
+
+                continue
 
             file_path_0 = f"{self.path}/raw/{file_0}"
             file_path_1 = f"{self.path}/raw/{file_1}"
@@ -3086,9 +3100,9 @@ class Pipeline:
             if "UTIL_MASTER_FLAT" in self.file_dict:
                 for key in self.file_dict["UTIL_MASTER_FLAT"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
+                        file_name = key.split("/")[-2:]
                         print(
-                            f"   - calib/util_calib_flat/{file_name} UTIL_MASTER_FLAT"
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
                         )
                         sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
                         file_found = True
@@ -3096,8 +3110,8 @@ class Pipeline:
             if "CAL_FLAT_MASTER" in self.file_dict:
                 for key in self.file_dict["CAL_FLAT_MASTER"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/cal_flat/{file_name} CAL_FLAT_MASTER")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER")
                         sof_open.write(f"{key} CAL_FLAT_MASTER\n")
                         file_found = True
 
@@ -3111,8 +3125,8 @@ class Pipeline:
             if "CAL_DARK_BPM" in self.file_dict:
                 for key in self.file_dict["CAL_DARK_BPM"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/cal_dark/{file_name} CAL_DARK_BPM")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
                         sof_open.write(f"{key} CAL_DARK_BPM\n")
                         file_found = True
 
@@ -3130,9 +3144,9 @@ class Pipeline:
                             not file_found
                             and key.split("/")[-2] == f"util_wave_{calib_type}"
                         ):
-                            file_name = key.split("/")[-1]
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"   - calib/util_wave_{calib_type}/{file_name} UTIL_WAVE_TW"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW"
                             )
                             sof_open.write(f"{key} UTIL_WAVE_TW\n")
                             file_found = True
@@ -3140,16 +3154,16 @@ class Pipeline:
             # if "CAL_WAVE_TW" in self.file_dict:
             #     for key in self.file_dict["CAL_WAVE_TW"]:
             #         if not file_found:
-            #             file_name = key.split("/")[-1]
-            #             print(f"   - calib/{file_name} CAL_WAVE_TW")
+            #             file_name = key.split("/")[-2:]
+            #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_WAVE_TW")
             #             sof_open.write(f"{key} CAL_WAVE_TW\n")
             #             file_found = True
             #
             # if "CAL_FLAT_TW" in self.file_dict:
             #     for key in self.file_dict["CAL_FLAT_TW"]:
             #         if not file_found:
-            #             file_name = key.split("/")[-1]
-            #             print(f"   - calib/{file_name} CAL_FLAT_TW")
+            #             file_name = key.split("/")[-2:]
+            #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_TW")
             #             sof_open.write(f"{key} CAL_FLAT_TW\n")
             #             file_found = True
 
@@ -3163,8 +3177,8 @@ class Pipeline:
             if "CAL_DETLIN_COEFFS" in self.file_dict:
                 for key in self.file_dict["CAL_DETLIN_COEFFS"]:
                     if not file_found:
-                        file_name = key.split("/")[-1]
-                        print(f"   - calib/{file_name} CAL_DETLIN_COEFFS")
+                        file_name = key.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_COEFFS")
                         sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
                         file_found = True
 
@@ -3186,7 +3200,7 @@ class Pipeline:
             esorex = [
                 "esorex",
                 f"--recipe-config={config_file}",
-                f"--output-dir={self.product_folder}",
+                f"--output-dir={output_dir}",
                 "cr2res_obs_nodding",
                 sof_file,
             ]
@@ -3197,70 +3211,70 @@ class Pipeline:
                 stdout = subprocess.DEVNULL
                 print("Running EsoRex...", end="", flush=True)
 
-            subprocess.run(esorex, cwd=self.product_folder, stdout=stdout, check=True)
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
             if not verbose:
                 print(" [DONE]\n")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extractedB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_extracted_combined.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extracted_combined.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_combinedB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_modelB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncA.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_slitfuncB.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_A.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_trace_wave_A.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits")
 
-            spec_file = pathlib.Path(self.product_folder / "cr2res_obs_nodding_trace_wave_B.fits")
-            spec_file.rename(self.product_folder / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits")
+            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_trace_wave_B.fits")
+            spec_file.rename(output_dir / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits")
 
             # Update file dictionary with output files
 
             print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
 
-            fits_file = self.product_folder / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
+            fits_file = output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
             self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
 
             count_exp += 1
@@ -3272,11 +3286,11 @@ class Pipeline:
 
         # Export the extracted spectrum to a JSON file
 
-        for nod in ["A", "B"]:
-            fits_file = self.product_folder / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
-
-            if os.path.exists(fits_file):
-                self.export_spectra(nod_ab=nod)
+        # for nod in ["A", "B"]:
+        #     fits_file = output_dir / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
+        #
+        #     if os.path.exists(fits_file):
+        #         self.export_spectra(nod_ab=nod)
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:

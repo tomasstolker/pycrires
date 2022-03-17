@@ -1,7 +1,7 @@
 *pycrires*
 ==========
 
-Pipeline for reduction of high-resolution spectroscopy data from VLT/CRIRES+
+Data reduction pipeline for VLT/CRIRES+
 
 .. image:: https://img.shields.io/pypi/v/pycrires
    :target: https://pypi.python.org/pypi/pycrires
@@ -39,6 +39,6 @@ Contributions are welcome so please consider `forking <https://help.github.com/e
 License
 -------
 
-Copyright 2021 Tomas Stolker
+Copyright 2021-2022 Tomas Stolker
 
-*pycrires* is distributed under the MIT License. See the LICENSE file for the terms and conditions.
+*pycrires* is distributed under the MIT License. See `LICENSE <https://github.com/tomasstolker/pycrires/blob/main/LICENSE>`_ for the terms and conditions.

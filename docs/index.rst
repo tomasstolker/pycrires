@@ -9,6 +9,7 @@ Documentation for *pycrires*
    :maxdepth: 2
 
    installation
+   running
    tutorial.ipynb
    modules
    about
