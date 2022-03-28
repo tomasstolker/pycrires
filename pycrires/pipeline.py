@@ -347,7 +347,27 @@ class Pipeline:
         file_dict = {}
 
         if header is not None and "ESO DET SEQ1 DIT" in header:
-            file_dict["DIT"] = header["ESO DET SEQ1 DIT"]
+            if sof_tag in ["CAL_DARK_MASTER", "CAL_DARK_BPM"]:
+                # Use DIT from filename because of issue with
+                # cr2res_cal_dark recipe which does not copy
+                # the correct header from raw to master dark
+                # when processing raw dark with multiple DIT
+                file_tmp = file_name.split("/")[-1]
+                file_tmp = file_tmp.split("_")[-2]
+                file_tmp = file_tmp.split("x")[-2]
+
+                if "." in file_tmp:
+                    decimal = len(file_tmp.split(".")[-1])
+                    if decimal == 5:
+                        for key, value in self.file_dict["DARK"].items():
+                            if float(file_tmp) == round(value["DIT"], 5):
+                                file_dict["DIT"] = value["DIT"]
+                                break
+                else:
+                    file_dict["DIT"] = float(file_tmp)
+
+            else:
+                file_dict["DIT"] = header["ESO DET SEQ1 DIT"]
         else:
             file_dict["DIT"] = None
 
@@ -473,7 +493,7 @@ class Pipeline:
             elif eso_recipe == "cr2res_obs_nodding":
                 config_text = config_text.replace(
                     "cr2res.cr2res_obs_nodding.extract_oversample=7",
-                    "cr2res.cr2res_obs_nodding.extract_oversample=12",
+                    "cr2res.cr2res_obs_nodding.extract_oversample=8",
                 )
 
             elif eso_recipe == "molecfit_model":
@@ -1135,7 +1155,7 @@ class Pipeline:
         sky_calc["pwv"] = pwv
 
         print(f"  - Wavelength range (nm) = {sky_calc['wmin']} - {sky_calc['wmax']}")
-        print(f"  - Sampling resolution = {sky_calc['wres']}")
+        print(f"  - lambda / Dlambda = {sky_calc['wres']}")
         print(f"  - Airmass = {sky_calc['airmass']:.2f}")
         print(f"  - PWV (mm) = {sky_calc['pwv']}\n")
 
@@ -3761,7 +3781,7 @@ class Pipeline:
 
         self._print_section("Correct wavelength solution")
 
-        output_dir = self.calib_folder / "correct_wavelengths"
+        output_dir = self.product_folder / "correct_wavelengths"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -4016,14 +4036,14 @@ class Pipeline:
         self._print_section("Plot spectra")
 
         if corrected:
-            fits_file = f"{self.path}/calib/correct_wavelengths/" \
+            fits_file = f"{self.path}/product/correct_wavelengths/" \
                       + f"cr2res_obs_nodding_extracted{nod_ab}_" \
                       + f"{file_id:03d}_corr.fits"
 
             print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}_corr.fits")
 
         else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
+            fits_file = f"{self.path}/product/obs_nodding/cr2res_obs_nodding_" \
                       + f"extracted{nod_ab}_{file_id:03d}.fits"
 
             print(f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits")
@@ -4119,11 +4139,11 @@ class Pipeline:
             plt.tight_layout()
 
             if corrected:
-                plot_file = f"{self.path}/calib/correct_wavelengths/" \
+                plot_file = f"{self.path}/product/correct_wavelengths/" \
                           + f"spectra_nod_{nod_ab}_det_{i+1}_corr_" \
                           + f"{file_id:03d}.png"
             else:
-                plot_file = f"{self.path}/product/spectra_nod_" \
+                plot_file = f"{self.path}/product/obs_nodding/spectra_nod_" \
                           + f"{nod_ab}_det_{i+1}_{file_id:03d}.png"
 
             plt.savefig(plot_file, dpi=300)
