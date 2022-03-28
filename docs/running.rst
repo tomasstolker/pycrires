@@ -52,6 +52,7 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_extract(calib_type='fpet', verbose=False)
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
   pipeline.obs_nodding(verbose=False)
+  pipeline.util_extract_2d(nod_ab='A', verbose=False)
   pipeline.run_skycalc(pwv=1.)
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)

@@ -4010,12 +4010,12 @@ class Pipeline:
             # Get data on size of the slit on the detector
             tw_data = fits.open(tw_file)[1].data
             slit_range = tw_data['SlitFraction'][0]
-            num_orders = tw_data['All'].shape[0]
+            num_orders = tw_data['Order'].size
             tot_slit_fraction = slit_range[-1] - slit_range[0]
             full_slit_length = 10  # (arcsec)
 
-            # Calculate the spatial size for the extraction and
-            # the number of spatial points
+            # Calculate the spatial size for the extraction
+            # and the number of spatial points
             extraction_fraction = extraction_length / full_slit_length
             n_points = spatial_oversampling * tot_slit_fraction / extraction_fraction
 
@@ -4032,17 +4032,16 @@ class Pipeline:
                 extraction_centers - np.median(extraction_centers)) + slit_range[1]
 
             # Allocate arrays to save the results
-            num_det = 3
-            results_2d = np.zeros((num_det, num_orders, n_points, 2048))
-            errors_2d = np.zeros((num_det, num_orders, n_points, 2048))
-            wavelengths = np.zeros((num_det, num_orders, 2048))
+            flux_2d = np.zeros((3, num_orders, n_points, 2048))
+            errors_2d = np.zeros((3, num_orders, n_points, 2048))
+            wavelengths = np.zeros((3, num_orders, n_points, 2048))
 
-            for i, center in enumerate(extraction_centers):
+            for pos_idx, center in enumerate(extraction_centers):
                 lower_lim = center - extraction_fraction/2
                 upper_lim = center + extraction_fraction/2
 
                 print(f'--> Extracting spectrum between slit '
-                      f'fractions: {lower_lim:.3f} - {upper_lim:.3f}')
+                      f'fractions: {lower_lim:.4f} - {upper_lim:.4f}')
 
                 # Run EsoRex
 
@@ -4068,7 +4067,7 @@ class Pipeline:
                 if not verbose:
                     print(" [DONE]\n")
 
-                # Load results
+                # Load 1D result and store in array
 
                 fits_out = self.product_folder / "util_extract_2d" / \
                     f"cr2res_obs_nodding_combined{nod_ab}_" \
@@ -4076,11 +4075,20 @@ class Pipeline:
 
                 hdu = fits.open(fits_out)
 
-                for det in np.arange(3):
-                    for order in tw_data['Order']:
-                        results_2d[det, order-2, i, :] = hdu[det+1].data[f'{order:02d}_01_SPEC']
-                        errors_2d[det, order-2, i, :] = hdu[det+1].data[f'{order:02d}_01_ERR']
-                        wavelengths[det, order-2, :] = hdu[det+1].data[f'{order:02d}_01_WL']
+                for det_idx in np.arange(3):
+                    for order_idx, order_item in enumerate(tw_data['Order']):
+                        flux_2d[det_idx, order_idx, pos_idx, :] = \
+                            hdu[det_idx+1].data[f'{order_item:02d}_01_SPEC']
+
+                        errors_2d[det_idx, order_idx, pos_idx, :] = \
+                            hdu[det_idx+1].data[f'{order_item:02d}_01_ERR']
+
+                        wavelengths[det_idx, order_idx, pos_idx, :] = \
+                            hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
+
+            # for order_idx, order_item in enumerate(tw_data['Order']):
+            #     print(np.mean(wavelengths[det_idx, order_idx, :, :], axis=0))
+            #     print(np.std(wavelengths[det_idx, order_idx, :, :], axis=0))
 
             # Save 2D results
 
@@ -4088,11 +4096,12 @@ class Pipeline:
                 f'cr2res_combined{nod_ab}_{count_exp:03d}_extr2d.fits'
 
             result_hdulist = fits.HDUList(hdu[0])
-            result_hdulist.append(fits.ImageHDU(results_2d, name='SPEC'))
+            result_hdulist.append(fits.ImageHDU(flux_2d, name='SPEC'))
             result_hdulist.append(fits.ImageHDU(errors_2d, name='ERR'))
             result_hdulist.append(fits.ImageHDU(wavelengths, name='WAVE'))
-            print(f'--> Done, writing results to {fits_out}')
             result_hdulist.writeto(fits_out, overwrite=True)
+
+            print(f'--> Done! Results written to {fits_out.stem}')
 
     @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:
