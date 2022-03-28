@@ -475,6 +475,11 @@ class Pipeline:
                     "cr2res.cr2res_obs_nodding.extract_oversample=7",
                     "cr2res.cr2res_obs_nodding.extract_oversample=12",
                 )
+            elif pipeline_method == "util_extract_2d":
+                config_text = config_text.replace(
+                    "cr2res.cr2res_util_extract.extract_oversample=7",
+                    "cr2res.cr2res_util_extract.extract_oversample=12",
+                )
 
             elif eso_recipe == "molecfit_model":
                 config_text = config_text.replace(
@@ -3901,9 +3906,8 @@ class Pipeline:
     @typechecked
     def util_extract_2d(self, nod_ab: str = 'A', 
                         verbose: bool = True,
-                        extraction_length = None, 
-                        spatial_oversampling = 1.,
-                        util_extract_oversample = 12
+                        extraction_length = 0.059, 
+                        spatial_oversampling = 1.
                         ) -> None:
         """
         Method for extracting spectra from the products of obs_nodding, while retaining
@@ -3920,20 +3924,25 @@ class Pipeline:
             Print output produced by ``esorex``.
         extraction_length: float
             Spatial extent over which to extract the spectrum in arcseconds.
-            If 'None' then the pixel scale of the instrument is used.
+            The default value of 0.059 arcsec is the pixel scale of the instrument.
         spatial_oversampling: float
             Oversampling factor for the extraction along the slit length.
             Example: If spatial_oversampling=2 is being used the end result
             will have twice as many spatial pixels as the original data.
-        util_extract_oversample: int
-            Oversampling to use for util_extract.
         Returns
         -------
         NoneType
             None
         """
 
-        self._print_section("Process nodding frames", recipe_name="cr2res_util_extract_2d")
+        self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract_2d")
+            
+        if not os.path.exists(self.product_folder / "util_extract_2d"):
+            os.mkdir(self.product_folder/ "util_extract_2d")
+
+        # Create EsoRex configuration file if not found
+        self._create_config("cr2res_util_extract", "util_extract_2d", verbose)
+        config_file = self.config_folder / "util_extract_2d.rc"
 
         fits_files = sorted(list(self.file_dict[f'OBS_NODDING_COMBINED{nod_ab}'].keys()))
 
@@ -3941,12 +3950,11 @@ class Pipeline:
         for count_exp,fits_file in enumerate(fits_files):
             
             # Prepare SOF file
-            sof_file = pathlib.Path(self.product_folder / f"files_{count_exp:03d}.sof")
-            sof_open = open(sof_file, "w", encoding="utf-8")
-            sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
-            tw_file = self.product_folder / f"cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
-            sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
-            sof_open.close()
+            sof_file = pathlib.Path(self.product_folder / 'util_extract_2d' / f"files_{count_exp:03d}.sof")
+            with open(sof_file, "w", encoding="utf-8") as sof_open:
+                sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
+                tw_file = self.product_folder / f"cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
+                sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
 
             # Get data on size of the slit on the detector
             tw_data = fits.open(tw_file)[1].data
@@ -3954,12 +3962,6 @@ class Pipeline:
             num_orders = tw_data['All'].shape[0]
             tot_slit_fraction = slit_range[-1] - slit_range[0]
             full_slit_length = 10 #arcsec
-            
-            # If extraction_length not specified, calculate the pixel scale
-            if extraction_length == None:
-                slit_fraction_pixels = np.mean(tw_data['Upper']-tw_data['Lower'])
-                pixel_scale = full_slit_length * tot_slit_fraction  / slit_fraction_pixels
-                extraction_length = pixel_scale
 
             # Calculate the spatial size for the extraction and
             # the number of spatial points
@@ -3968,11 +3970,6 @@ class Pipeline:
 
             # Round N_points up to the next odd integer
             N_points = int(np.ceil(N_points) // 2 * 2 + 1)
-            
-
-            # Create EsoRex configuration file if not found
-            self._create_config("cr2res_util_extract", "util_extract", verbose)
-            config_file = self.config_folder / "util_extract.rc"
 
             # Calculate slit fraction centers to use for util_extract
             extraction_centers = np.linspace(0,
@@ -3997,10 +3994,9 @@ class Pipeline:
                 esorex = [
                     "esorex",
                     f"--recipe-config={config_file}",
-                    f"--output-dir={self.product_folder}",
+                    f"--output-dir={self.product_folder / 'util_extract_2d'}",
                     "cr2res_util_extract",
                     f"--slit_frac={lower_lim},{upper_lim}",
-                    f"--oversample={util_extract_oversample}",
                     sof_file,
                 ]
 
@@ -4016,9 +4012,9 @@ class Pipeline:
                     print(" [DONE]\n")
                 
                 # Load results
-                hdu = fits.open(self.product_folder / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}_extr1D.fits")
+                hdu = fits.open(self.product_folder  / "util_extract_2d" / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}_extr1D.fits")
                 for det in np.arange(1, 4):
-                    for order in np.arange(2,9):
+                    for order in tw_data['Order']:
                         results_2d[det-1, order-2, i, :] = hdu[det].data[f'{order:02d}_01_SPEC']
                         errors_2d[det-1, order-2, i, :] = hdu[det].data[f'{order:02d}_01_ERR']
                         wavelengths[det-1, order-2, :] = hdu[det].data[f'{order:02d}_01_WL']
@@ -4028,7 +4024,7 @@ class Pipeline:
             result_hdulist.append(fits.ImageHDU(results_2d, name='SPEC'))
             result_hdulist.append(fits.ImageHDU(errors_2d, name='ERR'))
             result_hdulist.append(fits.ImageHDU(wavelengths, name='WAVE'))
-            savepath = self.product_folder / f'cr2res_combined{nod_ab}_{count_exp:03d}_extr2d.fits'
+            savepath = self.product_folder / "util_extract_2d/" / f'cr2res_combined{nod_ab}_{count_exp:03d}_extr2d.fits'
             print(f'--> Done, writing results to {savepath}')
             result_hdulist.writeto(savepath, overwrite=True)
 
