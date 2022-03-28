@@ -438,7 +438,21 @@ class Pipeline:
             with open(config_file, "r", encoding="utf-8") as open_config:
                 config_text = open_config.read()
 
-            if eso_recipe == "cr2res_util_calib":
+            if eso_recipe == "cr2res_cal_dark":
+                # Defaults empirically determined by Thomas Marquart:
+                # YJHK bands: bpm_method = GLOBAL, bpm_kappa = 0.5
+                # LM bands: bpm_method = LOCAL, bpm_kappa = 6.0
+                config_text = config_text.replace(
+                    "cr2res.cr2res_cal_dark.bpm_method=DEFAULT",
+                    "cr2res.cr2res_cal_dark.bpm_method=GLOBAL",
+                )
+
+                config_text = config_text.replace(
+                    "cr2res_cal_dark.bpm_kappa=-1.0",
+                    "cr2res_cal_dark.bpm_kappa=0.5",
+                )
+
+            elif eso_recipe == "cr2res_util_calib":
                 config_text = config_text.replace(
                     "cr2res.cr2res_util_calib.collapse=NONE",
                     "cr2res.cr2res_util_calib.collapse=MEAN",
@@ -472,6 +486,12 @@ class Pipeline:
                         "cr2res.cr2res_util_extract.smooth_spec=2.0e-7",
                     )
 
+                elif pipeline_method == "util_extract_2d":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_extract.oversample=5",
+                        "cr2res.cr2res_util_extract.oversample=8",
+                    )
+
             elif eso_recipe == "cr2res_util_wave":
                 config_text = config_text.replace(
                     "cr2res.cr2res_util_wave.fallback_input_wavecal=FALSE",
@@ -494,11 +514,6 @@ class Pipeline:
                 config_text = config_text.replace(
                     "cr2res.cr2res_obs_nodding.extract_oversample=7",
                     "cr2res.cr2res_obs_nodding.extract_oversample=8",
-                )
-            elif pipeline_method == "util_extract_2d":
-                config_text = config_text.replace(
-                    "cr2res.cr2res_util_extract.extract_oversample=7",
-                    "cr2res.cr2res_util_extract.extract_oversample=8",
                 )
 
             elif eso_recipe == "molecfit_model":
@@ -3963,7 +3978,7 @@ class Pipeline:
             None
         """
 
-        self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract_2d")
+        self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract")
 
         output_dir = self.product_folder / "util_extract_2d"
 
@@ -3971,8 +3986,10 @@ class Pipeline:
             os.makedirs(output_dir)
 
         # Create EsoRex configuration file if not found
+
         self._create_config("cr2res_util_extract", "util_extract_2d", verbose)
-        config_file = self.config_folder / "util_extract_2d.rc"
+
+        # List with FITS files that will be processed
 
         fits_files = sorted(list(self.file_dict[f'OBS_NODDING_COMBINED{nod_ab}'].keys()))
 
@@ -3981,7 +3998,7 @@ class Pipeline:
             if count_exp > 0:
                 print()
 
-            print(f"Processing exposure #{count_exp+1}/{len(fits_files)}:\n")
+            print(f"Processing exposure #{count_exp+1}/{len(fits_files)}...\n")
 
             # Prepare SOF file
             sof_file = pathlib.Path(self.product_folder / 'util_extract_2d' / f"files_{count_exp:03d}.sof")
@@ -4028,6 +4045,8 @@ class Pipeline:
                       f'fractions: {lower_lim:.3f} - {upper_lim:.3f}')
 
                 # Run EsoRex
+
+                config_file = self.config_folder / "util_extract_2d.rc"
 
                 esorex = [
                     "esorex",
