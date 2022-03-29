@@ -3285,11 +3285,13 @@ class Pipeline:
                             hdu_list[det_idx+1].data = inpaint.inpaint_biharmonic(image, mask)
 
                             bp_fraction = np.sum(np.isnan(image)) / np.size(image)
-                            print(f"Percentage of bad pixels in nod "
-                                  f"{nod_pos} of exposure {count_exp+1} "
-                                  f"= {100.*bp_fraction:.1f}")
+                            print(f"Bad pixels in nod {nod_pos}, "
+                                  f"detector {det_idx+1}: "
+                                  f"{100.*bp_fraction:.1f}%")
 
                         hdu_list.writeto(fits_file, overwrite=True)
+
+                print()
 
             spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
             spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
@@ -4039,8 +4041,8 @@ class Pipeline:
             # Prepare SOF file
             sof_file = pathlib.Path(self.product_folder / 'util_extract_2d' / f"files_{count_exp:03d}.sof")
             with open(sof_file, "w", encoding="utf-8") as sof_open:
-                file_name = fits_file.split("/")[-2:]
                 sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
+                file_name = fits_file.split("/")[-2:]
                 print(f"   - product/{file_name[-2]}/{file_name[-1]} OBS_NODDING_OTHER")
 
                 tw_file = self.product_folder / f"obs_nodding/cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
