@@ -4,6 +4,7 @@ matplotlib
 numpy
 openpyxl
 pandas
+scikit-image
 scipy
 skycalc_ipy
 typeguard

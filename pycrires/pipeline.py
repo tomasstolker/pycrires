@@ -24,6 +24,7 @@ from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
 from scipy import interpolate, ndimage, signal
+from skimage.restoration import inpaint
 from typeguard import typechecked
 
 
@@ -3019,7 +3020,11 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def obs_nodding(self, verbose: bool = True) -> None:
+    def obs_nodding(
+        self,
+        verbose: bool = True,
+        correct_bad_pixels: bool = True,
+    ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
 
@@ -3027,6 +3032,11 @@ class Pipeline:
         ----------
         verbose : bool
             Print output produced by ``esorex``.
+        correct_bad_pixels : bool
+            Correct bad pixels with the bad pixel map and
+            ``skimage.restoration.inpaint``. If set to
+            ``False``, the bad pixels will remain as NaN
+            in the output images.
 
         Returns
         -------
@@ -3255,6 +3265,31 @@ class Pipeline:
 
             if not verbose:
                 print(" [DONE]\n")
+
+            if correct_bad_pixels:
+                for nod_pos in ["A", "B"]:
+                    fits_file = output_dir / f"cr2res_obs_nodding_combined{nod_pos}.fits"
+
+                    with fits.open(fits_file) as hdu_list:
+                        # Iterate over 3 detectors
+                        for det_idx in range(3):
+                            # Read image with bad pixels set to NaN
+                            image = hdu_list[det_idx+1].data
+
+                            # Create bad pixel mask
+                            mask = np.zeros(image.shape)
+                            mask[np.isnan(image)] = 1.
+
+                            # Overwrite the image with the bad pixels
+                            # corrected with an inpainting technique
+                            hdu_list[det_idx+1].data = inpaint.inpaint_biharmonic(image, mask)
+
+                            bp_fraction = np.sum(np.isnan(image)) / np.size(image)
+                            print(f"Percentage of bad pixels in nod "
+                                  f"{nod_pos} of exposure {count_exp+1} "
+                                  f"= {100.*bp_fraction:.1f}")
+
+                        hdu_list.writeto(fits_file, overwrite=True)
 
             spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
             spec_file.rename(output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits")
@@ -3998,14 +4033,20 @@ class Pipeline:
             if count_exp > 0:
                 print()
 
-            print(f"Processing exposure #{count_exp+1}/{len(fits_files)}...\n")
+            print(f"Creating SOF file for exposure "
+                  f"#{count_exp+1}/{len(fits_files)}:")
 
             # Prepare SOF file
             sof_file = pathlib.Path(self.product_folder / 'util_extract_2d' / f"files_{count_exp:03d}.sof")
             with open(sof_file, "w", encoding="utf-8") as sof_open:
+                file_name = fits_file.split("/")[-2:]
                 sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} OBS_NODDING_OTHER")
+
                 tw_file = self.product_folder / f"obs_nodding/cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
                 sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
+                file_name = str(tw_file).split("/")[-2:]
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW\n")
 
             # Get data on size of the slit on the detector
             tw_data = fits.open(tw_file)[1].data
