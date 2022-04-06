@@ -1082,6 +1082,58 @@ class Pipeline:
         self._print_info()
 
     @typechecked
+    def select_bpm(self, wlen_id, dit_select) -> Optional[str]:
+        """
+        Method for selecting the bad pixel map (BPM)
+        of the requested DIT. An adjusted is made
+        for long exposure in the :math:`K` band, of
+        which some orders can be affected by the
+        thermal continuum.
+
+        Parameters
+        ----------
+        wlen_id : str
+            Wavelength setting of the science exposures.
+        dit_select : float
+            Detector integration time (DIT) for
+            which the BPM should be selected.
+
+        Returns
+        -------
+        str, None
+            Filename of the BPM. A ``None`` is returned
+            if a BPM was not found.
+        """
+
+        bpm_dit = set()
+        for key, value in self.file_dict["CAL_DARK_BPM"].items():
+            bpm_dit.add(value['DIT'])
+
+        file_found = False
+        bpm_file = None
+
+        warn_msg = "The thermal continuum becomes visible in " \
+                   "the reddest orders of long DARK exposures " \
+                   "obtained in the K band. This affects the " \
+                   "identification of bad pixels with the GLOBAL " \
+                   "method. A BPM that was derived from a shorter " \
+                   "exposure will therefore be selected instead."
+
+        for key, value in self.file_dict["CAL_DARK_BPM"].items():
+            if not file_found:
+                if wlen_id[0] == "K" and dit_select > 30.:
+                    if value["DIT"] < 30.:
+                        warnings.warn(warn_msg)
+                        bpm_file = key
+                        file_found = True
+
+                elif dit_select == value["DIT"]:
+                    bpm_file = key
+                    file_found = True
+
+        return bpm_file
+
+    @typechecked
     def run_skycalc(self, pwv: float = 3.5) -> None:
         """
         Method for running the Python wrapper of SkyCalc
@@ -1409,6 +1461,11 @@ class Pipeline:
         else:
             print(f"Unique DIT values: {unique_dit}\n")
 
+        # Wavelength setting
+
+        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+
         # Iterate over different DIT values for FLAT
 
         for dit_item in unique_dit:
@@ -1448,17 +1505,17 @@ class Pipeline:
                 file_found = False
 
                 if "CAL_DARK_BPM" in self.file_dict:
-                    for key, value in self.file_dict["CAL_DARK_BPM"].items():
-                        if not file_found and value["DIT"] == dit_item:
-                            file_name = key.split("/")[-2:]
-                            print("   - calib/ CAL_DARK_BPM")
-                            sof_open.write(f"{key} CAL_DARK_BPM\n")
-                            file_found = True
+                    bpm_file = self.select_bpm(wlen_id, dit_item)
+
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
 
                 if not file_found:
-                    warnings.warn(
-                        f"There is not a bad pixel map with DIT = {dit_item} s."
-                    )
+                    warnings.warn(f"There is not a bad pixel map "
+                                  f"with DIT = {dit_item} s.")
 
             # Create EsoRex configuration file if not found
 
@@ -1915,6 +1972,9 @@ class Pipeline:
 
             dit_item = float(dit_item)
 
+        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+
         print(f"Creating SOF file for DIT={dit_item}:")
 
         sof_file = pathlib.Path(self.path / f"calib/util_calib_{calib_type}/files.sof")
@@ -1959,12 +2019,13 @@ class Pipeline:
             file_found = False
 
             if "CAL_DARK_BPM" in self.file_dict:
-                for key, value in self.file_dict["CAL_DARK_BPM"].items():
-                    if not file_found and value["DIT"] == dit_item:
-                        file_name = key.split("/")[-2:]
-                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
-                        sof_open.write(f"{key} CAL_DARK_BPM\n")
-                        file_found = True
+                bpm_file = self.select_bpm(wlen_id, dit_item)
+
+                if bpm_file is not None:
+                    file_name = bpm_file.split("/")[-2:]
+                    print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                    sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                    file_found = True
 
             if not file_found:
                 warnings.warn(f"There is not a bad pixel map with DIT = {dit_item} s.")
@@ -3061,11 +3122,17 @@ class Pipeline:
 
         # Check unique DIT
 
-        unique_dit = set()
-        for item in self.header_data[indices]["DET.SEQ1.DIT"]:
-            unique_dit.add(item)
+        # unique_dit = set()
+        # for item in self.header_data[indices]["DET.SEQ1.DIT"]:
+        #     unique_dit.add(item)
+        #
+        # print(f"Unique DIT values: {unique_dit}\n")
 
-        print(f"Unique DIT values: {unique_dit}\n")
+        # Wavelength setting and DIT
+
+        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
 
         # Count nod positions
 
@@ -3173,12 +3240,13 @@ class Pipeline:
             file_found = False
 
             if "CAL_DARK_BPM" in self.file_dict:
-                for key in self.file_dict["CAL_DARK_BPM"]:
-                    if not file_found:
-                        file_name = key.split("/")[-2:]
-                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
-                        sof_open.write(f"{key} CAL_DARK_BPM\n")
-                        file_found = True
+                bpm_file = self.select_bpm(science_wlen, science_dit)
+
+                if bpm_file is not None:
+                    file_name = bpm_file.split("/")[-2:]
+                    print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                    sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                    file_found = True
 
             if not file_found:
                 warnings.warn("Could not find a bap pixel map.")
