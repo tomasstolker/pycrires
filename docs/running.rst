@@ -28,7 +28,7 @@ After creating a :class:`~pycrires.pipeline.Pipeline` object, we can run all the
 
 A configuration file is generated when calling a :class:`~pycrires.pipeline.Pipeline` method for the first time. If needed, the configuration file can be adjusted, which will then be used when rerunning the same method.
 
-Below, there is an full example for reducing and calibrating the `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data:
+Below, there is an full example for reducing and calibrating the `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data. The :meth:`~pycrires.pipeline.Pipeline.util_extract_2d` method is only relevant if the spatial dimension needs to be preserved. Otherwise, the products from :meth:`~pycrires.pipeline.Pipeline.obs_nodding` and :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths` can be used.
 
 .. code-block:: python
 
@@ -52,9 +52,9 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_extract(calib_type='fpet', verbose=False)
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
   pipeline.obs_nodding(verbose=False, correct_bad_pixels=True)
-  pipeline.util_extract_2d(nod_ab='A', verbose=False)
   pipeline.run_skycalc(pwv=1.)
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
+  pipeline.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
   pipeline.clean_folder(keep_product=False)
 

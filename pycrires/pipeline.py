@@ -4038,7 +4038,7 @@ class Pipeline:
                 fig.add_subplot(111, frame_on=False)
                 plt.tick_params(labelcolor="none", bottom=False, left=False)
                 plt.ylabel("Slope", fontsize=16)
-                plt.xlabel("Offset [nm]", fontsize=16)
+                plt.xlabel("Offset (nm)", fontsize=16)
                 out_label = fits_file[-10:-5]
                 plt.tight_layout()
                 plt.savefig(f'{output_dir}/correlation_map_{out_label}.png')
@@ -4050,13 +4050,13 @@ class Pipeline:
         verbose: bool = True,
         extraction_length: float = 0.059,
         spatial_oversampling: float = 1.,
-        use_corrected_wavelengths: bool = True
+        use_corr_wavel: bool = True,
     ) -> None:
         """
         Method for extracting spectra from the products of
-        :func:`~pycrires.pipeline.Pipeline.obs_nodding`, while
+        :meth:`~pycrires.pipeline.Pipeline.obs_nodding`, while
         retaining the spatial information. It is important
-        to run :func:`~pycrires.pipeline.Pipeline.obs_nodding` before
+        to run :meth:`~pycrires.pipeline.Pipeline.obs_nodding` before
         :func:`~pycrires.pipeline.Pipeline.util_extract_2d`. The
         2D spectra are extracted by running the ``cr2res_util_extract``
         recipe over a range of slit fractions.
@@ -4068,18 +4068,20 @@ class Pipeline:
             solution will be corrected.
         verbose : bool
             Print output produced by ``esorex``.
-        extraction_length: float
+        extraction_length : float
             Spatial extent (arcsec) over which to extract the spectrum.
             The default value of 0.059 arcsec is the pixel scale of the
             CRIRES detectors.
-        spatial_oversampling: float
+        spatial_oversampling : float
             Oversampling factor for the extraction along the slit
             length. For example, with ``spatial_oversampling=2``, the
             end result will have twice as many spatial pixels as the
             original images.
-        use_corrected_wavelengths: bool
-            Use the wavelength solution obtained from 
-            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
+        use_corr_wavel : bool
+            Use the wavelength solution obtained with
+            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`
+            when set to ``True``. Otherwise, the original wavelength
+            solution is used that is determined by the EsoRex recipes.
 
         Returns
         -------
@@ -4188,42 +4190,58 @@ class Pipeline:
                     f"cr2res_obs_nodding_combined{nod_ab}_" \
                     f"{count_exp:03d}_extr1D.fits"
 
-                hdu = fits.open(fits_out)
+                hdu_list = fits.open(fits_out)
 
                 for det_idx in np.arange(3):
                     for order_idx, order_item in enumerate(tw_data['Order']):
                         flux_2d[det_idx, order_idx, pos_idx, :] = \
-                            hdu[det_idx+1].data[f'{order_item:02d}_01_SPEC']
+                            hdu_list[det_idx+1].data[f'{order_item:02d}_01_SPEC']
 
                         errors_2d[det_idx, order_idx, pos_idx, :] = \
-                            hdu[det_idx+1].data[f'{order_item:02d}_01_ERR']
+                            hdu_list[det_idx+1].data[f'{order_item:02d}_01_ERR']
 
-                        # Check wether to use the corrected wavelength solution
-                        # or the wavelengths provided by esorex
-                        if use_corrected_wavelengths:
-                            wave_corr_file = self.product_folder / \
+                        # Check wether to use the corrected wavelength
+                        # solution or the original wavelength solution
+                        # that was determined by the EsoRex recipes
+                        if use_corr_wavel:
+                            wave_file = self.product_folder / \
                                 "correct_wavelengths" / \
-                                f"cr2res_obs_nodding_extracted{nod_ab}_{count_exp:03d}_corr.fits"
-                            wave_corr_hdu = fits.open(wave_corr_file)
-                            wavelengths[det_idx, order_idx, pos_idx, :] = \
-                                wave_corr_hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
+                                "cr2res_obs_nodding_extracted" \
+                                f"{nod_ab}_{count_exp:03d}_corr.fits"
+
+                            with fits.open(wave_file) as wave_hdu:
+                                wavelengths[det_idx, order_idx, pos_idx, :] = \
+                                    wave_hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
 
                         else:
                             wavelengths[det_idx, order_idx, pos_idx, :] = \
-                                hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
+                                hdu_list[det_idx+1].data[f'{order_item:02d}_01_WL']
+
+                hdu_list.close()
 
             # Save 2D results
 
             fits_out = self.product_folder / "util_extract_2d/" / \
                 f'cr2res_combined{nod_ab}_{count_exp:03d}_extr2d.fits'
 
-            result_hdulist = fits.HDUList(hdu[0])
-            result_hdulist.append(fits.ImageHDU(flux_2d, name='SPEC'))
-            result_hdulist.append(fits.ImageHDU(errors_2d, name='ERR'))
-            result_hdulist.append(fits.ImageHDU(wavelengths, name='WAVE'))
-            result_hdulist.writeto(fits_out, overwrite=True)
+            result_hdu = fits.HDUList(fits.PrimaryHDU())
+            result_hdu.append(fits.ImageHDU(flux_2d, name='SPEC'))
+            result_hdu.append(fits.ImageHDU(errors_2d, name='ERR'))
+            result_hdu.append(fits.ImageHDU(wavelengths, name='WAVE'))
+            result_hdu.writeto(fits_out, overwrite=True)
 
             print(f'--> Done! Results written to {fits_out.stem}')
+
+            # Remove redundant output files
+
+            file_ext = ["extr1D", "extrModel", "extrSlitFu"]
+
+            for file_item in file_ext:
+                file_name = self.product_folder / "util_extract_2d" / \
+                    f"cr2res_obs_nodding_combined{nod_ab}_" \
+                    f"{count_exp:03d}_{file_item}.fits"
+
+                os.remove(file_name)
 
     @typechecked
     def export_spectra(self, nod_ab: str = "A") -> None:

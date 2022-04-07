@@ -237,6 +237,10 @@ class TestPipeline:
 
         self.pipeline.run_skycalc(pwv=1.0)
 
+    # def test_correct_wavelengths(self) -> None:
+    #
+    #     self.pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
+
     def test_plot_spectra(self) -> None:
 
         if shutil.which("esorex") is None:
