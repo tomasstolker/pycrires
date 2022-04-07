@@ -4050,6 +4050,7 @@ class Pipeline:
         verbose: bool = True,
         extraction_length: float = 0.059,
         spatial_oversampling: float = 1.,
+        use_corrected_wavelengths: bool = True
     ) -> None:
         """
         Method for extracting spectra from the products of
@@ -4076,6 +4077,9 @@ class Pipeline:
             length. For example, with ``spatial_oversampling=2``, the
             end result will have twice as many spatial pixels as the
             original images.
+        use_corrected_wavelengths: bool
+            Use the wavelength solution obtained from 
+            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
 
         Returns
         -------
@@ -4194,12 +4198,19 @@ class Pipeline:
                         errors_2d[det_idx, order_idx, pos_idx, :] = \
                             hdu[det_idx+1].data[f'{order_item:02d}_01_ERR']
 
-                        wavelengths[det_idx, order_idx, pos_idx, :] = \
-                            hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
+                        # Check wether to use the corrected wavelength solution
+                        # or the wavelengths provided by esorex
+                        if use_corrected_wavelengths:
+                            wave_corr_file = self.product_folder / \
+                                "correct_wavelengths" / \
+                                f"cr2res_obs_nodding_extracted{nod_ab}_{count_exp:03d}_corr.fits"
+                            wave_corr_hdu = fits.open(wave_corr_file)
+                            wavelengths[det_idx, order_idx, pos_idx, :] = \
+                                wave_corr_hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
 
-            # for order_idx, order_item in enumerate(tw_data['Order']):
-            #     print(np.mean(wavelengths[det_idx, order_idx, :, :], axis=0))
-            #     print(np.std(wavelengths[det_idx, order_idx, :, :], axis=0))
+                        else:
+                            wavelengths[det_idx, order_idx, pos_idx, :] = \
+                                hdu[det_idx+1].data[f'{order_item:02d}_01_WL']
 
             # Save 2D results
 
