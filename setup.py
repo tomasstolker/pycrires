@@ -9,7 +9,7 @@ with open('requirements.txt') as req_txt:
 
 setuptools.setup(
     name='pycrires',
-    version='0.0.3',
+    version='0.1.0',
     description='Data reduction pipeline for VLT/CRIRES+',
     long_description=open('README.rst').read(),
     long_description_content_type='text/x-rst',
