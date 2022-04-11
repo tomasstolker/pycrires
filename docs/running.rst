@@ -52,11 +52,14 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_extract(calib_type='fpet', verbose=False)
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
   pipeline.obs_nodding(verbose=False, correct_bad_pixels=True)
+  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
+  pipeline.export_spectra(nod_ab='A', corrected=False)
   pipeline.run_skycalc(pwv=1.)
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
+  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0
+  pipeline.export_spectra(nod_ab='A', corrected=True)  
   pipeline.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
-  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
-  pipeline.clean_folder(keep_product=False)
+  pipeline.clean_folder(keep_product=True)
 
 .. tip::
   The pipeline will automatically download any missing calibration files (e.g. dark frames with specific DIT). After downloading and uncompressing, it is important to rerun the pipeline such that the calibration files are included with the data reduction.

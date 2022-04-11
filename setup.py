@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 
-from setuptools import setup
+import pkg_resources
+import setuptools
 
-from pip._internal.network.session import PipSession
-from pip._internal.req import parse_requirements
+with open('requirements.txt') as req_txt:
+    parse_req = pkg_resources.parse_requirements(req_txt)
+    install_requires = [str(req) for req in parse_req]
 
-reqs = parse_requirements('requirements.txt', session=PipSession())
-reqs = [str(req.requirement) for req in reqs]
-
-setup(
+setuptools.setup(
     name='pycrires',
     version='0.0.3',
     description='Data reduction pipeline for VLT/CRIRES+',
@@ -19,9 +18,10 @@ setup(
     url='https://github.com/tomasstolker/pycrires',
     project_urls={'Documentation': 'https://pycrires.readthedocs.io'},
     packages=['pycrires'],
-    package_dir={'pycrires': 'pycrires'},
-    include_package_data=True,
-    install_requires=reqs,
+    package_data={'pycrires': ['*.txt',
+                               'calib_data/*.dat',
+                               'calib_data/*.txt']},
+    install_requires=install_requires,
     license='MIT',
     zip_safe=False,
     keywords='pycrires',

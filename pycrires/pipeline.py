@@ -7,14 +7,17 @@ import logging
 import os
 import pathlib
 import shutil
+import socket
 import subprocess
 import sys
+import urllib.request
 import warnings
 
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+import pycrires
 import skycalc_ipy
 
 from astropy import time
@@ -23,7 +26,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from scipy import interpolate, ndimage, signal
+from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
 from typeguard import typechecked
 
@@ -152,6 +155,25 @@ class Pipeline:
                 if item.replace(" ", "")[:9] == "molecfit_":
                     print(f"   -{item}")
 
+        # Check if there is a new version available
+
+        try:
+            contents = urllib.request.urlopen(
+                "https://pypi.org/pypi/pycrires/json", timeout=1.0
+            ).read()
+
+            data = json.loads(contents)
+            latest_version = data["info"]["version"]
+
+        except (urllib.error.URLError, socket.timeout):
+            latest_version = None
+
+        if latest_version is not None and pycrires.__version__ != latest_version:
+            print(f"\nA new version ({latest_version}) is available!")
+            print("Want to stay informed about updates?")
+            print("Please have a look at the Github page:")
+            print("https://github.com/tomasstolker/pycrires")
+
     @staticmethod
     @typechecked
     def _print_section(
@@ -192,10 +214,10 @@ class Pipeline:
             print(f"EsoRex recipe: {recipe_name}\n")
 
     @typechecked
-    def _print_info(self) -> None:
+    def _observation_info(self) -> None:
         """
-        Internal method for printing some details about the
-        observations.
+        Internal method for printing some details
+        about the observations.
 
         Returns
         -------
@@ -1079,7 +1101,15 @@ class Pipeline:
             self.header_data[column_name] = header_dict[key_item]
 
         self._export_header()
-        self._print_info()
+
+        indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+        if len(indices) > 0:
+            self._observation_info()
+        else:
+            warnings.warn("Could not find any DPR.CATG=SCIENCE data "
+                          "so there will not be any details printed "
+                          "about the observations.")
 
     @typechecked
     def select_bpm(self, wlen_id, dit_select) -> Optional[str]:
@@ -1121,8 +1151,8 @@ class Pipeline:
 
         for key, value in self.file_dict["CAL_DARK_BPM"].items():
             if not file_found:
-                if wlen_id[0] == "K" and dit_select > 30.:
-                    if value["DIT"] < 30.:
+                if wlen_id[0] == "K" and dit_select > 10.:
+                    if value["DIT"] < 10.:
                         warnings.warn(warn_msg)
                         bpm_file = key
                         file_found = True
@@ -1146,7 +1176,7 @@ class Pipeline:
             the telluric spectrum. This value will impact the depth
             of the telluric lines which can be seen when plotting
             the spectra with
-            :meth:`~pycrires.pipeline.Pipeline.plot_spectra` while
+            :func:`~pycrires.pipeline.Pipeline.plot_spectra` while
             setting ``telluric=True``.
 
         Returns
@@ -3341,21 +3371,34 @@ class Pipeline:
                     with fits.open(fits_file) as hdu_list:
                         # Iterate over 3 detectors
                         for det_idx in range(3):
-                            # Read image with bad pixels set to NaN
-                            image = hdu_list[det_idx+1].data
+                            # Read image with spectra
+                            # Bad pixels are set to NaN
+                            image = hdu_list[(det_idx*2)+1].data
 
                             # Create bad pixel mask
                             mask = np.zeros(image.shape)
                             mask[np.isnan(image)] = 1.
 
-                            # Overwrite the image with the bad pixels
-                            # corrected with an inpainting technique
-                            hdu_list[det_idx+1].data = inpaint.inpaint_biharmonic(image, mask)
+                            # Overwrite the image
+                            # Bad pixels are corrected by inpainting
+                            hdu_list[(det_idx*2)+1].data = inpaint.inpaint_biharmonic(image, mask)
 
                             bp_fraction = np.sum(np.isnan(image)) / np.size(image)
                             print(f"Bad pixels in nod {nod_pos}, "
                                   f"detector {det_idx+1}: "
                                   f"{100.*bp_fraction:.1f}%")
+
+                            # Read image with uncertainties
+                            # Bad pixels are set to NaN
+                            image = hdu_list[(det_idx*2)+2].data
+
+                            # Create bad pixel mask
+                            mask = np.zeros(image.shape)
+                            mask[np.isnan(image)] = 1.
+
+                            # Overwrite the image
+                            # Bad pixels are corrected by inpainting
+                            hdu_list[(det_idx*2)+2].data = inpaint.inpaint_biharmonic(image, mask)
 
                         hdu_list.writeto(fits_file, overwrite=True)
 
@@ -3428,14 +3471,6 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
-
-        # Export the extracted spectrum to a JSON file
-
-        # for nod in ["A", "B"]:
-        #     fits_file = output_dir / f"cr2res_obs_nodding_extracted{nod}_{count_exp:03d}.fits"
-        #
-        #     if os.path.exists(fits_file):
-        #         self.export_spectra(nod_ab=nod)
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
@@ -3870,7 +3905,7 @@ class Pipeline:
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
-        :meth:`~pycrires.pipeline.Pipeline.run_skycalc`.
+        :func:`~pycrires.pipeline.Pipeline.run_skycalc`.
 
         Parameters
         ----------
@@ -3905,6 +3940,8 @@ class Pipeline:
         """
 
         self._print_section("Correct wavelength solution")
+
+        # Create output folder
 
         output_dir = self.product_folder / "correct_wavelengths"
 
@@ -4054,9 +4091,9 @@ class Pipeline:
     ) -> None:
         """
         Method for extracting spectra from the products of
-        :meth:`~pycrires.pipeline.Pipeline.obs_nodding`, while
+        :func:`~pycrires.pipeline.Pipeline.obs_nodding`, while
         retaining the spatial information. It is important
-        to run :meth:`~pycrires.pipeline.Pipeline.obs_nodding` before
+        to run :func:`~pycrires.pipeline.Pipeline.obs_nodding` before
         :func:`~pycrires.pipeline.Pipeline.util_extract_2d`. The
         2D spectra are extracted by running the ``cr2res_util_extract``
         recipe over a range of slit fractions.
@@ -4079,7 +4116,7 @@ class Pipeline:
             original images.
         use_corr_wavel : bool
             Use the wavelength solution obtained with
-            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`
+            :func:`~pycrires.pipeline.Pipeline.correct_wavelengths`
             when set to ``True``. Otherwise, the original wavelength
             solution is used that is determined by the EsoRex recipes.
 
@@ -4090,6 +4127,8 @@ class Pipeline:
         """
 
         self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract")
+
+        # Create output folder
 
         output_dir = self.product_folder / "util_extract_2d"
 
@@ -4244,17 +4283,12 @@ class Pipeline:
                 os.remove(file_name)
 
     @typechecked
-    def export_spectra(self, nod_ab: str = "A") -> None:
+    def fit_gaussian(self, nod_ab: str = "A") -> None:
         """
-        Method for exporting the extracted spectra to a JSON file.
-        After exporting, the data can be read with Python from the
-        JSON file into a dictionary. For example, reading the
-        spectrum of the first exposure:
-
-        >>> import json
-        >>> with open('product/spectra_nod_A_000.json') as json_file:
-        ...    data = json.load(json_file)
-        >>> print(data.keys())
+        Method for centering the 2D extracted spectra by fitting a
+        Gaussian function to the mean of each spectral order. This
+        method should be used after extracting the 2D spectra with
+        :func:`~pycrires.pipeline.Pipeline.util_extract_2d`. 
 
         Parameters
         ----------
@@ -4268,63 +4302,132 @@ class Pipeline:
             None
         """
 
-        self._print_section("Export spectra")
+        self._print_section("Fit Gaussian")
 
-        count = 0
+        # Create output folder
 
-        while True:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_" \
-                      + f"extracted{nod_ab}_{count:03d}.fits"
+        output_dir = self.product_folder / "fit_gaussian"
 
-            if not pathlib.Path(fits_file).exists():
-                break
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-            print(f"Reading nod {nod_ab} from cr2res_obs_"
-                  f"nodding_extracted{nod_ab}_{count:03d}.fits",
-                  end="", flush=True)
+        # List with FITS files that will be processed
 
-            spec_data = []
+        input_folder = self.product_folder / "util_extract_2d"
+        fits_files = pathlib.Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")
+        n_exp = len(list(pathlib.Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")))
 
-            with fits.open(fits_file) as hdu_list:
-                # Loop over 3 detectors
-                for i in range(3):
-                    spec_data.append(hdu_list[i + 1].data)
+        print_msg = ""
 
-            print(" [DONE]")
+        for fits_idx, fits_item in enumerate(fits_files):
+            if fits_idx == 0:
+                print(f"Processing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
+            else:
+                print(f"\nProcessing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
 
-            print("Exporting spectra to JSON file...", end="", flush=True)
+            file_name = str(fits_item).split("/")[-2:]
+            print(f"   - Input spectrum: product/{file_name[-2]}/{file_name[-1]}")
 
-            spec_dict = {}
+            with fits.open(fits_item) as hdu_list:
+                spec = np.array(hdu_list[1].data)
+                err = np.array(hdu_list[2].data)
+                wave = np.array(hdu_list[3].data)
 
-            for i, det_item in enumerate(spec_data):
-                spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
+            spec_shift = np.zeros(spec.shape)
+            err_shift = np.zeros(err.shape)
 
-                for spec_item in spec_orders:
-                    wavel = det_item[f"{spec_item}_WL"]
-                    flux = det_item[f"{spec_item}_SPEC"]
-                    error = det_item[f"{spec_item}_ERR"]
+            def gaussian(x, amp, mean, sigma):
+                return amp * np.exp(-0.5*(x - mean)**2/sigma**2)
 
-                    flux = np.nan_to_num(flux)
-                    error = np.nan_to_num(error)
+            gauss_amp = np.zeros((spec.shape[:2]))
+            gauss_mean = np.zeros((spec.shape[:2]))
+            gauss_sigma = np.zeros((spec.shape[:2]))
 
-                    # indices = np.where((flux != 0.0) & (flux != np.nan) & (error != np.nan))[0]
+            for det_idx in range(spec.shape[0]):
+                for order_idx in range(spec.shape[1]):
+                    spec_select = spec[det_idx, order_idx, :, :]
+                    y_data = np.median(spec_select, axis=1)
 
-                    spec_dict[f"det_{i+1}_{spec_item}_WL"] = list(wavel)
-                    spec_dict[f"det_{i+1}_{spec_item}_SPEC"] = list(flux)
-                    spec_dict[f"det_{i+1}_{spec_item}_ERR"] = list(error)
+                    if y_data.shape[0]%2 == 0:
+                        x_data = np.linspace(-y_data.shape[0]//2+0.5,
+                                             y_data.shape[0]//2-0.5,
+                                             y_data.shape[0])
 
-            json_out = self.product_folder / f"spectra_nod_{nod_ab}_{count:03d}.json"
+                    else:
+                        x_data = np.linspace(-(y_data.shape[0]-1)//2,
+                                             (y_data.shape[0]-1)//2,
+                                             y_data.shape[0])
 
-            with open(json_out, "w", encoding="utf-8") as json_file:
-                json.dump(spec_dict, json_file, indent=4)
+                    # if np.count_nonzero(y_data) == 0:
+                    #     spec_shift[det_idx, order_idx, :, :] = \
+                    #         np.full(y_data.shape[0], np.nan)
+                    #
+                    #     continue
 
-            print(" [DONE]")
+                    try:
+                        guess = (np.amax(y_data), 0., 1.)
+                        result, _ = optimize.curve_fit(gaussian, x_data, y_data, p0=guess)
 
-            count += 1
+                        print("\r" + len(print_msg)*" ", end="")
+
+                        print_msg = f"\r   - Gaussian parameters: " \
+                                    f"amp = {result[0]:.1f}, " \
+                                    f"mean = {result[1]:.1f}, " \
+                                    f"sigma = {result[2]:.1f}"
+
+                        print(print_msg, end="")
+
+                        spec_shift[det_idx, order_idx, :, :] = \
+                            ndimage.shift(spec_select, (-result[1], 0.),
+                                          order=3, mode='constant')
+
+                        gauss_amp[det_idx, order_idx] = result[0]
+                        gauss_mean[det_idx, order_idx] = result[1]
+                        gauss_sigma[det_idx, order_idx] = result[2]
+
+                    except RuntimeError:
+                        spec_shift[det_idx, order_idx, :, :] = \
+                            np.full(spec_select.shape, np.nan)
+
+            print("\r" + len(print_msg)*" ", end="")
+
+            print_msg = f"\r   - Best-fit parameters: " \
+                        f"amp = {np.median(gauss_amp):.1f} +/- {np.std(gauss_amp):.1f}, " \
+                        f"mean = {np.median(gauss_mean):.1f} +/- {np.std(gauss_mean):.1f}, " \
+                        f"sigma = {np.median(gauss_sigma):.1f} +/- {np.std(gauss_sigma):.1f}"
+
+            print(print_msg, end="")
+
+            # for det_idx in range(spec.shape[0]):
+            #     for order_idx in range(spec.shape[1]):
+            #         g_mean = gauss_mean[det_idx, order_idx]
+            #         g_select = gauss_mean[det_idx, order_idx, ]
+            #
+            #         if g_mean < np.median(g_select) - 3.*np.std(g_select):
+            #             spec_shift[det_idx, order_idx, :, wavel_idx] = \
+            #                 np.full(y_data.shape[0], np.nan)
+            #
+            #         elif g_mean > np.median(g_select) + 3.*np.std(g_select):
+            #             spec_shift[det_idx, order_idx, :, wavel_idx] = \
+            #                 np.full(y_data.shape[0], np.nan)
+
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(spec_shift, name='SPEC'))
+            hdu_list.append(fits.ImageHDU(err, name='ERR'))
+            hdu_list.append(fits.ImageHDU(wave, name='WAVE'))
+
+            fits_file = f"{self.path}/product/fit_gaussian/spectra_" \
+                      + f"nod_{nod_ab}_{fits_idx:03d}_center.fits"
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_file, overwrite=True)
 
     @typechecked
     def plot_spectra(
-        self, nod_ab: str = "A",
+        self,
+        nod_ab: str = "A",
         telluric: bool = True,
         corrected: bool = False,
         file_id: int = 0
@@ -4340,13 +4443,13 @@ class Pipeline:
         telluric : bool
             Plot a telluric transmission spectrum for comparison. It
             should have been calculated with
-            :meth:`~pycrires.pipeline.Pipeline.run_skycalc`.
+            :func:`~pycrires.pipeline.Pipeline.run_skycalc`.
         corrected : bool
             Plot the wavelength-corrected spectra. The output from
-            :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
+            :func:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
         file_id : int
             File ID number from the FITS filename as produced by
-            :meth:`~pycrires.pipeline.Pipeline.obs_nodding`. The
+            :func:`~pycrires.pipeline.Pipeline.obs_nodding`. The
             numbers consist of three values, starting at 000. To
             select the first file (that contains 000), set
             ``file_id=0``. For the second file, which has 001 in
@@ -4411,7 +4514,7 @@ class Pipeline:
                 for i in range(num_ext):
                     spec_corr.append(hdu_list[i + 1].data)
 
-        print("Plotting spectra...", end="", flush=True)
+        print("Plotting spectra:")
 
         count = 0
 
@@ -4471,11 +4574,107 @@ class Pipeline:
                 plot_file = f"{self.path}/product/obs_nodding/spectra_nod_" \
                           + f"{nod_ab}_det_{i+1}_{file_id:03d}.png"
 
+            file_name = plot_file.split("/")[-2:]
+            print(f"   - product/{file_name[-2]}/{file_name[-1]}")
+
             plt.savefig(plot_file, dpi=300)
             plt.clf()
             plt.close()
 
-        print(" [DONE]")
+    @typechecked
+    def export_spectra(
+        self,
+        nod_ab: str = "A",
+        corrected: bool = False,
+    ) -> None:
+        """
+        Method for exporting the 1D extracted spectra to a JSON
+        file. After exporting, the data can be read with Python
+        from the JSON file into a dictionary. For example,
+        reading the spectra of the first exposure:
+
+        >>> import json
+        >>> with open('product/obs_nodding/spectra_nod_A_000.json') as json_file:
+        ...    data = json.load(json_file)
+        >>> print(data.keys())
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the extracted spectra will be
+            exported to a JSON file ("A" or "B").
+        corrected : bool
+            Export the wavelength-corrected spectra, so the output from
+            :func:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
+            If set to ``False``, the extracted spectra from
+            :func:`~pycrires.pipeline.Pipeline.obs_nodding` are
+            exported.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Export spectra")
+
+        count = 0
+
+        while True:
+            if corrected:
+                fits_file = f"{self.path}/product/correct_wavelen" \
+                            + f"gths/cr2res_obs_nodding_extracted" \
+                            + f"{nod_ab}_{count:03d}_corr.fits"
+
+            else:
+                fits_file = f"{self.path}/product/obs_nodding/" \
+                            + f"cr2res_obs_nodding_extracted" \
+                            + f"{nod_ab}_{count:03d}.fits"
+
+            if not pathlib.Path(fits_file).exists():
+                break
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"Reading FITS data: product/{file_name[-2]}/{file_name[-1]}")
+
+            spec_data = []
+
+            with fits.open(fits_file) as hdu_list:
+                # Loop over 3 detectors
+                for i in range(3):
+                    spec_data.append(hdu_list[i + 1].data)
+
+            spec_dict = {}
+
+            for i, det_item in enumerate(spec_data):
+                spec_orders = np.sort([j[:5] for j in det_item.dtype.names if "WL" in j])
+
+                for spec_item in spec_orders:
+                    wavel = det_item[f"{spec_item}_WL"]
+                    flux = det_item[f"{spec_item}_SPEC"]
+                    error = det_item[f"{spec_item}_ERR"]
+
+                    flux = np.nan_to_num(flux)
+                    error = np.nan_to_num(error)
+
+                    # indices = np.where((flux != 0.0) & (flux != np.nan) & (error != np.nan))[0]
+
+                    spec_dict[f"det_{i+1}_{spec_item}_WL"] = list(wavel)
+                    spec_dict[f"det_{i+1}_{spec_item}_SPEC"] = list(flux)
+                    spec_dict[f"det_{i+1}_{spec_item}_ERR"] = list(error)
+
+            if corrected:
+                json_out = self.product_folder / f"correct_wavelengths/spectra_nod_{nod_ab}_{count:03d}.json"
+            else:
+                json_out = self.product_folder / f"obs_nodding/spectra_nod_{nod_ab}_{count:03d}.json"
+
+            file_name = str(json_out).split("/")[-2:]
+            print(f"Exporting spectra: product/{file_name[-2]}/{file_name[-1]}")
+
+            with open(json_out, "w", encoding="utf-8") as json_file:
+                json.dump(spec_dict, json_file, indent=4)
+
+            count += 1
 
     @typechecked
     def clean_folder(self, keep_product: bool = True) -> None:
@@ -4551,16 +4750,15 @@ class Pipeline:
         self.util_calib(calib_type="fpet", verbose=False)
         self.util_extract(calib_type="fpet", verbose=False)
         self.util_wave(calib_type="fpet", verbose=False)
-        self.obs_nodding(verbose=False)
+        self.obs_nodding(verbose=False, correct_bad_pixels=True)
+        self.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
+        self.export_spectra(nod_ab='A', corrected=False)
         self.run_skycalc(pwv=1.0)
-        self.correct_wavelengths(nod_ab="A")
-        self.correct_wavelengths(nod_ab="B")
-        self.plot_spectra(nod_ab="A", telluric=True, corrected=True)
-        self.plot_spectra(nod_ab="B", telluric=True, corrected=True)
-        self.export_spectra(nod_ab="A")
-        self.export_spectra(nod_ab="B")
-        self.molecfit_input(nod_ab="A")
-        self.molecfit_model(nod_ab="A", verbose=False)
-        self.molecfit_calctrans(nod_ab="A", verbose=False)
-        self.molecfit_correct(nod_ab="A", verbose=False)
-        self.plot_spectra(nod_ab="A", telluric=True)
+        self.correct_wavelengths(nod_ab='A', create_plots=True)
+        self.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
+        self.export_spectra(nod_ab='A', corrected=True)  
+        self.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
+        # self.molecfit_input(nod_ab="A")
+        # self.molecfit_model(nod_ab="A", verbose=False)
+        # self.molecfit_calctrans(nod_ab="A", verbose=False)
+        # self.molecfit_correct(nod_ab="A", verbose=False)
