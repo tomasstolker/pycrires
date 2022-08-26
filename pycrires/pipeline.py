@@ -10,10 +10,11 @@ import shutil
 import socket
 import subprocess
 import sys
+from turtle import xcor
 import urllib.request
 import warnings
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -1247,6 +1248,10 @@ class Pipeline:
         elif wlen_id[0] == "K":
             sky_calc["wmin"] = 1500.0  # (nm)
             sky_calc["wmax"] = 3000.0  # (nm)
+
+        elif wlen_id[0] == "L":
+            sky_calc["wmin"] = 2500.0  # (nm)
+            sky_calc["wmax"] = 4500.0  # (nm)
 
         else:
             raise NotImplementedError(
@@ -3284,6 +3289,7 @@ class Pipeline:
             # Find UTIL_WAVE_TW file
 
             file_found = False
+            #sof_open.write(f"/users/ricolandman/Research_data/Alex_h3+_crires/raw/L3262_tw.fits UTIL_WAVE_TW\n")
 
             for calib_type in ["fpet", "une"]:
                 if "UTIL_WAVE_TW" in self.file_dict:
@@ -3891,6 +3897,63 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+    
+    
+    @typechecked
+    def xcor_wavelength_solution(
+        self,
+        spec: np.ndarray,
+        wavel: np.ndarray,
+        telluric_template: np.ndarray,
+        accuracy: float = 0.01,
+        window_length : int = 201
+    ) -> tuple([np.ndarray, float, float]):
+
+        template_interp = interpolate.interp1d(
+            telluric_template[:, 0], telluric_template[:, 1],
+            kind="linear", bounds_error=True
+        )
+
+        # Remove continuum and nans of spectra.
+        # The continuum is estimated by smoothing the
+        # spectrum with a 2nd order Savitzky-Golay filter
+        nans = np.isnan(spec)
+        continuum = signal.savgol_filter(
+            spec[~nans], window_length=window_length,
+            polyorder=2, mode='interp')
+        
+        # Add 1 to continuum for bins where there is no flux
+        spec_flat = spec[~nans]/(continuum + 1) - 1.
+
+        # Don't use the edges as that sometimes gives problems
+        spec_flat = spec_flat[20:-20]
+        used_wavel = wavel[~nans][20:-20]
+
+        # Prepare cross-correlation grid
+        dlam = (wavel[-1]-np.mean(wavel))/2
+        da = accuracy/dlam
+        N_a = int(np.ceil(0.1 / da) // 2 * 2 + 1)
+        N_b = int(np.ceil(0.6 / accuracy) // 2 * 2 + 1)
+
+        a_grid = np.linspace(
+            0.95, 1.05, N_a)[:, np.newaxis, np.newaxis]
+        b_grid = np.linspace(
+            -0.3, 0.3, N_b)[np.newaxis, :, np.newaxis]
+        mean_wavel = np.mean(wavel)
+        wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :]
+                            - mean_wavel) + mean_wavel + b_grid
+        template = template_interp(wl_matrix) - 1.
+
+        # Calculate the cross-correlation
+        # between data and template
+        cross_corr = template.dot(spec_flat)
+
+        # Find optimal wavelength solution
+        opt_idx = np.unravel_index(
+            np.argmax(cross_corr), cross_corr.shape)
+        opt_a = a_grid[opt_idx[0], 0, 0]
+        opt_b = b_grid[0, opt_idx[1], 0]
+        return cross_corr, opt_a, opt_b
 
     @typechecked
     def correct_wavelengths(
@@ -3994,44 +4057,16 @@ class Pipeline:
                     spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
                     # err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
-                    # Remove continuum and nans of spectra.
-                    # The continuum is estimated by smoothing the
-                    # spectrum with a 2nd order Savitzky-Golay filter
-                    nans = np.isnan(spec)
-                    continuum = signal.savgol_filter(
-                        spec[~nans], window_length=window_length,
-                        polyorder=2, mode='interp')
-                    spec_flat = spec[~nans]/continuum - 1.
-
-                    # Don't use the edges as that sometimes gives problems
-                    spec_flat = spec_flat[20:-20]
-                    used_wavel = wavel[~nans][20:-20]
-
-                    # Prepare cross-correlation grid
-                    dlam = (wavel[-1]-np.mean(wavel))/2
-                    da = accuracy/dlam
-                    a_grid = np.linspace(
-                        0.9, 1.1, int(0.2/da))[:, np.newaxis, np.newaxis]
-                    b_grid = np.linspace(
-                        -0.5, 0.5, int(1./accuracy))[np.newaxis, :, np.newaxis]
-                    mean_wavel = np.mean(wavel)
-                    wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis, :]
-                                          - mean_wavel) + mean_wavel + b_grid
-                    template = transm_interp(wl_matrix) - 1.
-                    template_std = np.mean(np.std(template, axis=-1))
-
                     # Check if there are enough telluric
                     # features in this wavelength range
+                    wl_mask = (transm_spec[:, 0] > np.min(wavel)) * \
+                              (transm_spec[:, 0] < np.max(wavel))
+                    template_std = np.std(transm_spec[wl_mask,1])
                     if template_std > minimum_strength:
                         # Calculate the cross-correlation
                         # between data and template
-                        cross_corr = template.dot(spec_flat)
-
-                        # Find optimal wavelength solution
-                        opt_idx = np.unravel_index(
-                            np.argmax(cross_corr), cross_corr.shape)
-                        opt_a = a_grid[opt_idx[0], 0, 0]
-                        opt_b = b_grid[0, opt_idx[1], 0]
+                        cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
+                            spec, wavel, transm_spec, accuracy, window_length)
 
                         # Plot correlation map
                         if create_plots:
@@ -4059,6 +4094,7 @@ class Pipeline:
                         f"+ {opt_a:.4f} * lambda'"
                     )
 
+                    mean_wavel = np.mean(wavel)
                     hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
                         opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
                     )
@@ -4079,6 +4115,157 @@ class Pipeline:
                 out_label = fits_file[-10:-5]
                 plt.tight_layout()
                 plt.savefig(f'{output_dir}/correlation_map_{out_label}.png')
+
+
+    @typechecked
+    def correct_wavelengths_2d(
+        self,
+        nod_ab: str = "A",
+        accuracy: float = 0.01,
+        window_length: int = 201,
+        minimum_strength: float = 0.005,
+        sum_over_spatial_dim: bool = True,
+        input_folder = 'fit_gaussian'
+    ) -> None:
+        """
+        Method for correcting the wavelength solution with a linear
+        function and maximizing the correlation with the telluric
+        model spectrum from SkyCalc, obtained with
+        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This function
+        can be applied to 2D extracted spectra, when one wants to keep
+        the spatial information.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position with the spectra of which the wavelength
+            solution will be corrected.
+        accuracy : float
+            Desired accuracy in nm of the wavelength solution.
+            This will be used to generate the grid on which the
+            correlation with a telluric spectrum is calculated
+            (default: 0.01 nm).
+        window_length : int
+            Width of the kernel (in number of pixels) that is used
+            for estimating the continuum by smoothing with the 2nd
+            order Savitzky-Golay filter from
+            ``scipy.signal.savgol_filter`` (default: 201).
+        minimum_strength : float
+            Minimum standard deviation of the telluric spectrum in
+            the wavelength range of the spectral order that is used
+            as threshold for applying the wavelength correction. If
+            there are not enough features (i.e. the standard
+            deviation is smaller than ``minimum_strength``), the
+            original wavelength solution will be saved (default:
+            0.005).
+        sum_over_spatial_dim: bool
+            If True, the wavelength correction will be calculated
+            using the summed spectra over the spatial direction,
+            improving the S/N of the spectra. However, this may 
+            result in slight errors in the wavelength solution
+            off-axis.
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Correct wavelength solution")
+
+        # Create output folder
+
+        output_dir = self.product_folder / "correct_wavelengths_2d"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        print("Model file: run_skycalc/transm_spec.dat")
+
+        # Read telluric model
+
+        print("Reading telluric model spectrum...", end="", flush=True)
+
+        transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
+
+        print(" [DONE]")
+
+        # Read extracted spectra
+        if input_folder=='custom_extract_2d':
+            fits_files = list(self.file_dict[f'CUSTOM_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='util_extract_2d':
+            fits_files = list(self.file_dict[f'UTIL_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='fit_gaussian':
+            fits_files = list(self.file_dict[f'FIT_GAUSSIAN_2D_{nod_ab}'].keys())
+
+        for fits_file in fits_files:
+
+            print(f"\nReading spectra from {fits_file}...", end="", flush=True)
+
+            hdu_list = fits.open(fits_file)
+            corrected_wavel = hdu_list['WAVE'].data[:,:,:,:]
+
+            print(" [DONE]")
+
+            for det_idx in range(3):
+                # Get detector data
+                print(f"\nCorrecting wavelength solution of detector {det_idx+1}:")
+
+                # Loop over spectral orders
+                for order_idx in np.arange(7):
+                    # Extract WL and SPEC for given order/detector
+                    wavel_2d = hdu_list['WAVE'].data[det_idx, order_idx]
+                    spec_2d = hdu_list['SPEC'].data[det_idx, order_idx]
+
+                    # If we sum over the spatial dimension to boost SNR, do so
+                    if sum_over_spatial_dim:
+                        wavel_list = [np.nanmean(wavel_2d,axis=0)]
+                        spec_list = [np.nansum(spec_2d, axis=0)]
+                    else:
+                        wavel_list = wavel_2d
+                        spec_list = spec_2d
+
+                    # Check if there are enough telluric features in this
+                    # wavelength range
+                    wl_mask = (transm_spec[:, 0] > np.min(wavel_2d)) * \
+                              (transm_spec[:, 0] < np.max(wavel_2d))
+                    template_std = np.std(transm_spec[wl_mask,1])
+                    if not template_std > minimum_strength:
+                            print("WARNING: Not enough telluric features to correct wavelength"
+                                  f" for detector {det_idx} and order {order_idx}, using EsoRex"
+                                  "wavelength solution")
+                            corrected_wavel[det_idx, order_idx, :] = wavel_2d
+
+                    else:
+                        for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
+
+                            #Calculate wavelength solution using cross-correlation
+                            cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
+                                spec, wavel, transm_spec, accuracy, window_length)
+                            plt.figure()
+                            plt.imshow(cross_corr)
+                            plt.colorbar()
+                            plt.show()
+                            plt.close()
+
+                            print(
+                                f"   - Detector {det_idx+1}, Order {order_idx}, Row {row} -> lambda = {opt_b:.4f} "
+                                f"+ {opt_a:.4f} * lambda'"
+                            )
+
+                            mean_wavel = np.mean(wavel)
+                            # Save new wavelength solution
+                            if sum_over_spatial_dim:
+                                corrected_wavel[det_idx, order_idx, :] = (
+                                    opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
+                                )
+                            else:
+                                corrected_wavel[det_idx, order_idx, row] = (
+                                    opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
+                                )
+
+            # Add corrected wavelengths to existing fits file
+            hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name='CORR_WAVE'))
+            hdu_list.writeto(fits_file, overwrite=True)
 
     @typechecked
     def util_extract_2d(
@@ -4281,9 +4468,169 @@ class Pipeline:
                     f"{count_exp:03d}_{file_item}.fits"
 
                 os.remove(file_name)
+    
+    @typechecked
+    def custom_extract_2d(
+        self,
+        nod_ab: str = 'A',
+        spatial_sampling: float = 0.059,
+        max_separation: float = 2.
+    ) -> None:
+        """
+        Method for extracting spectra from the products of
+        :func:`~pycrires.pipeline.Pipeline.obs_nodding`, while
+        retaining the spatial information. It is important
+        to run :func:`~pycrires.pipeline.Pipeline.obs_nodding` before
+        :func:`~pycrires.pipeline.Pipeline.custom_extract_2d`. The
+        2D spectra are extracted using a custom pipeline that uses 
+        the trace data from the EsoRex pipeline.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position with the spectra of which the wavelength
+            solution will be corrected.
+        spatial_sampling : float
+            Spatial interval (arcsec) over which to extract the spectrum.
+            The default value of 0.059 arcsec is the pixel scale of the
+            CRIRES detectors.
+        max_separation : float
+            Spatial extent (arcsec) over which to extract the spectrum.
+            The default value of 2 arcsec is the size of the slit fraction
+            typically used for nodding observations with CRIRES.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Extract 2D spectra")
+        from scipy.interpolate import interp1d
+
+        # Create output folder
+
+        output_dir = self.product_folder / "custom_extract_2d"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # List with FITS files that will be processed
+
+        fits_files = sorted(list(self.file_dict[f'OBS_NODDING_COMBINED{nod_ab}'].keys()))
+
+        # Iterate over exposures
+        for count_exp, fits_file in enumerate(fits_files):
+            print()
+            hdulist = fits.open(fits_file)
+            tw_file = self.product_folder / f"obs_nodding/cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
+            trace_hdu = fits.open(tw_file)
+            tw_data = fits.open(tw_file)[1].data
+            
+            # Get data on size of the slit on the detector
+            tw_data = fits.open(tw_file)[1].data
+            slit_range = tw_data['SlitFraction'][0]
+            num_orders = tw_data['Order'].size
+            slit_fraction = slit_range[-1] - slit_range[0]
+            full_slit_length = 10  # (arcsec)
+
+            extraction_ratio = 2 * max_separation / (slit_fraction * full_slit_length)
+            if extraction_ratio > 1:
+                print("WARNING: Extracting a larger area than the slit fraction "
+                      "used in this nodding position")
+
+            # Calculate the spatial size for the extraction
+            # and the number of spatial points
+            n_points = 2 * max_separation / spatial_sampling
+
+            # Round n_points up to the next odd integer
+            n_points = int(np.ceil(n_points) // 2 * 2 + 1)
+
+            num_orders = tw_data['Order'].size
+            
+            #Make array for saving the results
+            flux_2d = np.zeros((3, num_orders, n_points, 2048))
+            errors_2d = np.zeros((3, num_orders, n_points, 2048))
+            wavelengths = np.zeros((3, num_orders, n_points, 2048))
+
+            for det_idx in np.arange(3):
+                print('Detector:', det_idx)
+                image = hdulist[2*det_idx+1].data
+                errors = hdulist[2*det_idx+2].data
+                trace_data = trace_hdu[det_idx+1].data
+                num_orders = tw_data['Order'].size
+                xs = np.arange(1, image.shape[1]+1)
+                Y = np.arange(1, image.shape[1]+1)
+
+                for order_idx in range(num_orders):
+                    print(f'Extracting order {order_idx}...')
+                    cent_idx = trace_data['All'][order_idx, 0]
+                    upper_idx = trace_data['Upper'][order_idx, 0]
+                    lower_idx = trace_data['Lower'][order_idx, 0]
+                    slit_fraction_dy = upper_idx - lower_idx
+                    dy = extraction_ratio * slit_fraction_dy
+
+                    #Make symmetric sampling around star position
+                    y0s = np.linspace(cent_idx - dy / 2, cent_idx + dy / 2, n_points)
+
+                    # Loop over spatial positions to extract
+                    for pos_idx, y0 in enumerate(y0s):
+                        # Calculate y coordinates of the trace
+                        # using the central, upper and lower trace coordinates
+                        y_mid = y0 + \
+                                trace_data['All'][order_idx, 1] * xs + \
+                                trace_data['All'][order_idx, 2] * xs**2
+
+                        if y0 > cent_idx:
+                            y_up = y0 + \
+                                   trace_data['Upper'][order_idx, 1] * xs + \
+                                   trace_data['Upper'][order_idx, 2] * xs**2
+                            frac = (y0 - cent_idx) / y0
+                            ys = frac * y_up + (1 - frac) * y_mid
+
+                        else:
+                            y_low = y0 + \
+                                    trace_data['Lower'][order_idx, 1] * xs + \
+                                    trace_data['Lower'][order_idx, 2] * xs**2
+                            frac = (cent_idx - y0) /  y0
+                            ys = frac * y_low + (1 - frac) * y_mid
+
+                        #Interpolate the spectrum and error for the new coordinates
+                        new_spec = [interp1d(Y, image[:,x-1], fill_value=0, 
+                                    bounds_error=False)(y) for (x,y) 
+                                    in zip(xs, ys)]
+                        new_err = [interp1d(Y, errors[:,x-1], fill_value=0, 
+                                    bounds_error=False)(y) for (x,y) 
+                                    in zip(xs, ys)]
+
+                        #Calculate the wavelength solution from the EsoRex data
+                        new_waves = trace_data['Wavelength'][order_idx, 0] + \
+                                    trace_data['Wavelength'][order_idx, 1] * xs + \
+                                    trace_data['Wavelength'][order_idx, 2] * xs**2
+
+                        # Save the results in the arrays
+                        flux_2d[det_idx, order_idx, pos_idx, :] = new_spec
+                        errors_2d[det_idx, order_idx, pos_idx, :] = new_err
+                        wavelengths[det_idx, order_idx, pos_idx, :] = new_waves
+
+            # Save 2D results
+            fits_out = self.product_folder / "custom_extract_2d/" / \
+                f'cr2res_combined{nod_ab}_{count_exp:03d}_extr2d.fits'
+
+            result_hdu = fits.HDUList(fits.PrimaryHDU())
+            result_hdu.append(fits.ImageHDU(flux_2d, name='SPEC'))
+            result_hdu.append(fits.ImageHDU(errors_2d, name='ERR'))
+            result_hdu.append(fits.ImageHDU(wavelengths, name='WAVE'))
+            result_hdu.writeto(fits_out, overwrite=True)
+
+            print(f'--> Done! Results written to {fits_out.stem}')
+            self._update_files(f"CUSTOM_EXTRACT_2D_{nod_ab}", str(fits_out))
+
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def fit_gaussian(self, nod_ab: str = "A") -> None:
+    def fit_gaussian(self, nod_ab: str = "A", extraction_input: str = 'util_extract_2d') -> None:
         """
         Method for centering the 2D extracted spectra by fitting a
         Gaussian function to the mean of each spectral order. This
@@ -4313,7 +4660,7 @@ class Pipeline:
 
         # List with FITS files that will be processed
 
-        input_folder = self.product_folder / "util_extract_2d"
+        input_folder = self.product_folder / extraction_input 
         fits_files = pathlib.Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")
         n_exp = len(list(pathlib.Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")))
 
@@ -4366,6 +4713,8 @@ class Pipeline:
 
                     try:
                         guess = (np.amax(y_data), 0., 1.)
+                        nans = np.isnan(y_data)
+                        y_data[nans] = 0
                         result, _ = optimize.curve_fit(gaussian, x_data, y_data, p0=guess)
 
                         print("\r" + len(print_msg)*" ", end="")
@@ -4423,6 +4772,10 @@ class Pipeline:
             print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
 
             hdu_list.writeto(fits_file, overwrite=True)
+            self._update_files(f"FIT_GAUSSIAN_2D_{nod_ab}", str(fits_file))
+
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def plot_spectra(
