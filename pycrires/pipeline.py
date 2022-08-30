@@ -4380,6 +4380,9 @@ class Pipeline:
             hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name="CORR_WAVE"))
             hdu_list.writeto(fits_file, overwrite=True)
 
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
     @typechecked
     def util_extract_2d(
         self,
@@ -4792,8 +4795,7 @@ class Pipeline:
                         errors_2d[det_idx, order_idx, pos_idx, :] = new_err
                         wavelengths[det_idx, order_idx, pos_idx, :] = new_waves
 
-                        empty_msg = len(print_msg) * " "
-                        print(f"\r{empty_msg}", end="", flush=True)
+                        print("\r" + len(print_msg) * " ", end="", flush=True)
 
             hdu_list.close()
 
@@ -4813,9 +4815,8 @@ class Pipeline:
 
             out_files.append(fits_out)
 
-        print(f" [DONE]")
-
-        print("\nOutput files:")
+        print(f"{print_msg} [DONE]\n")
+        print("Output files:")
 
         for item in out_files:
             self._update_files(f"CUSTOM_EXTRACT_2D_{nod_ab}", str(item))
@@ -4869,6 +4870,7 @@ class Pipeline:
         )
 
         print_msg = ""
+        out_files = []
 
         for fits_idx, fits_item in enumerate(fits_files):
             if fits_idx == 0:
@@ -4988,10 +4990,15 @@ class Pipeline:
             print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
 
             hdu_list.writeto(fits_file, overwrite=True)
-            self._update_files(f"FIT_GAUSSIAN_2D_{nod_ab}", str(fits_file))
+            out_files.append(fits_file)
 
-            with open(self.json_file, "w", encoding="utf-8") as json_file:
-                json.dump(self.file_dict, json_file, indent=4)
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"FIT_GAUSSIAN_2D_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def plot_spectra(
