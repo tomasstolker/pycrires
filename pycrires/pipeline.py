@@ -4221,8 +4221,8 @@ class Pipeline:
                         wavel_list = [np.nanmean(wavel_2d,axis=0)]
                         spec_list = [np.nansum(spec_2d, axis=0)]
                     else:
-                        wavel_list = wavel_2d
-                        spec_list = spec_2d
+                        wavel_list = np.copy(wavel_2d)
+                        spec_list = np.copy(spec_2d)
 
                     # Check if there are enough telluric features in this
                     # wavelength range
@@ -4241,11 +4241,6 @@ class Pipeline:
                             #Calculate wavelength solution using cross-correlation
                             cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
                                 spec, wavel, transm_spec, accuracy, window_length)
-                            plt.figure()
-                            plt.imshow(cross_corr)
-                            plt.colorbar()
-                            plt.show()
-                            plt.close()
 
                             print(
                                 f"   - Detector {det_idx+1}, Order {order_idx}, Row {row} -> lambda = {opt_b:.4f} "
