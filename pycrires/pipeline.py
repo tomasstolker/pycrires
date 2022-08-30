@@ -4257,7 +4257,9 @@ class Pipeline:
                                     opt_a*(wavel-mean_wavel) + mean_wavel + opt_b
                                 )
 
-            # Add corrected wavelengths to existing fits file
+            # Add corrected wavelengths tCORR_WAVE' in o existing fits file
+            if 'CORR_WAVE' in hdu_list:
+                hdu_list.pop('CORR_WAVE')
             hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name='CORR_WAVE'))
             hdu_list.writeto(fits_file, overwrite=True)
 
