@@ -6,7 +6,7 @@ About
 Contact
 -------
 
-*pycrires* has been developed by Tomas Stolker (stolker@strw.leidenuniv.nl). Feel free to send an email for questions, comments, or suggestions.
+*pycrires* has been developed by Tomas Stolker (stolker@strw.leidenuniv.nl) and Rico Landman (rlandman@strw.leidenuniv.nl). Feel free to send an email for questions, comments, or suggestions.
 
 Contributing
 ------------

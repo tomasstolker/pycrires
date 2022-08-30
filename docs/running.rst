@@ -28,7 +28,10 @@ After creating a :class:`~pycrires.pipeline.Pipeline` object, we can run all the
 
 A configuration file is generated when calling a :class:`~pycrires.pipeline.Pipeline` method for the first time. If needed, the configuration file can be adjusted, which will then be used when rerunning the same method.
 
-Below, there is an full example for reducing and calibrating the `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data. The :meth:`~pycrires.pipeline.Pipeline.util_extract_2d` method is only relevant if the spatial dimension needs to be preserved. Otherwise, the products from :meth:`~pycrires.pipeline.Pipeline.obs_nodding` and :meth:`~pycrires.pipeline.Pipeline.correct_wavelengths` can be used.
+Below, there is an full example for reducing and calibrating the `CRIRES+ <https://www.eso.org/sci/facilities/paranal/instruments/crires.html>`_ data.
+
+.. tip::
+  The pipeline will automatically download any missing calibration files (e.g. dark frames with specific DIT). After downloading and uncompressing, it is important to rerun the pipeline such that the calibration files are included with the data reduction.
 
 .. code-block:: python
 
@@ -53,13 +56,29 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
   pipeline.obs_nodding(verbose=False, correct_bad_pixels=True)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
-  pipeline.export_spectra(nod_ab='A', corrected=False)
   pipeline.run_skycalc(pwv=1.)
-  pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
-  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0
-  pipeline.export_spectra(nod_ab='A', corrected=True)  
-  pipeline.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
-  pipeline.clean_folder(keep_product=True)
 
-.. tip::
-  The pipeline will automatically download any missing calibration files (e.g. dark frames with specific DIT). After downloading and uncompressing, it is important to rerun the pipeline such that the calibration files are included with the data reduction.
+Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there are dedicated methods for extracting 2D spectra (so maintaining the spatial dimension):
+
+.. code-block:: python
+
+  pipeline.custom_extract_2d(nod_ab='A', spatial_sampling=0.059, max_separation=2.0)
+  pipeline.fit_gaussian(nod_ab='A', extraction_input='custom_extract_2d')
+  pipeline.correct_wavelengths_2d(nod_ab='A', accuracy=0.01, window_length=201,
+                                  minimum_strength=0.005, sum_over_spatial_dim=True,
+                                  input_folder='fit_gaussian')
+
+Or, for unresolved targets (e.g. transiting exoplanets), there are separate methods for extracting 1D spectra:
+
+.. code-block:: python
+
+  pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
+  pipeline.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
+  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
+  pipeline.export_spectra(nod_ab='A', corrected=True)  
+
+Finally, for removing any intermediate data products and freeing up some disk space:
+
+.. code-block:: python
+
+  pipeline.clean_folder(keep_product=True)
