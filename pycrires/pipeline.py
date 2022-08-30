@@ -10,7 +10,6 @@ import shutil
 import socket
 import subprocess
 import sys
-from turtle import xcor
 import urllib.request
 import warnings
 
