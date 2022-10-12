@@ -31,7 +31,7 @@ Installation from `Github <https://github.com/tomasstolker/pycrires>`_ is also p
 
 .. code-block:: console
 
-    $ pip install git+git://github.com:tomasstolker/pycrires.git
+    $ pip install git+https://github.com/tomasstolker/pycrires.git
 
 Cloning the repository
 ^^^^^^^^^^^^^^^^^^^^^^

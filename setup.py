@@ -22,6 +22,7 @@ setuptools.setup(
                                'calib_data/*.dat',
                                'calib_data/*.txt']},
     install_requires=install_requires,
+    tests_require=['pytest'],
     license='MIT',
     zip_safe=False,
     keywords='pycrires',

@@ -68,12 +68,11 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
                                   minimum_strength=0.005, sum_over_spatial_dim=True,
                                   input_folder='fit_gaussian')
 
-Or, for unresolved targets (e.g. transiting exoplanets), there are separate methods for extracting 1D spectra:
+Or, for unresolved targets (e.g. transiting exoplanets), the 1D spectra are already extracted by the ``obs_nodding`` method so we only need to apply the additional wavelength correction:
 
 .. code-block:: python
 
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
-  pipeline.util_extract_2d(nod_ab='A', verbose=False, use_corr_wavel=True)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
   pipeline.export_spectra(nod_ab='A', corrected=True)  
 
