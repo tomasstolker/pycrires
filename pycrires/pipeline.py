@@ -2908,22 +2908,12 @@ class Pipeline:
         NoneType
             None
         """
-
-        if calib_type == "une":
-            self._print_section(
-                "Determine wavelength solution", recipe_name="cr2res_util_wave"
-            )
-
-        elif calib_type == "fpet":
-            self._print_section(
-                "Refine wavelength solution", recipe_name="cr2res_util_wave"
-            )
-
-        else:
-            raise RuntimeError("The argument of 'calib_type' is not recognized.")
+        
+        labels = {"une": "Determine", "fpet": "Refine", "staring": "Correct"} # display text
+        assert calib_type in labels.keys(), 'The argument of "calib_type" is not recognized.'
+        self._print_section(f"{labels[calib_type]} wavelength solution", recipe_name="cr2res_util_wave")
 
         # Create output folder
-
         output_dir = self.calib_folder / f"util_wave_{calib_type}"
 
         if not os.path.exists(output_dir):
@@ -3139,7 +3129,179 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+            
+    def _find_master_flat(self):
+        """Find suitable master flat file from the file dictionary.
 
+        Returns:
+            master_flat_filename: Path to file.
+            good_key: type of master flat (`UTIL_MASTER_FLAT` or `CAL_MASTER_FLAT`)
+        """
+        
+        master_flat_keys = ['UTIL_MASTER_FLAT', 'CAL_MASTER_FLAT']
+        which_key = [key in self.file_dict for key in master_flat_keys]
+        assert True in which_key, "No master flat found"
+        
+        # print(which_key)
+        if all(which_key):
+            print("WARNING: Multiple master flats found. Using UTIL_MASTER_FLAT")
+            which_key[1] = False
+        good_key = master_flat_keys[which_key.index(True)]
+        # print(good_key)
+        master_flat_filename = list(self.file_dict[good_key])[0]
+        print(master_flat_filename)
+        key_value = self.file_dict[good_key]
+        file_name = master_flat_filename.split("/")[-2:]
+        # print(f"   - calib/{file_name[-2]}/{file_name[-1]} {good_key}")
+        return master_flat_filename, good_key
+    
+    def _find_bpm(self, science_wlen, science_dit):
+        assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
+        bpm_file = self.select_bpm(science_wlen, science_dit)
+        file_name = bpm_file.split("/")[-2:]
+        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+        return bpm_file
+    
+    def _find_master_dark(self, science_dit, key='CAL_DARK_MASTER'):
+        assert key in self.file_dict, f"No {key} BPM found"
+        
+        dits = [f['DIT'] for f in self.file_dict[key].values()]
+        assert True in np.isclose(science_dit, dits, 1e-2), "No matching DIT found"
+        ind_dit = list(np.isclose(science_dit, dits, 1e-2)).index(True)
+        return list(self.file_dict['CAL_DARK_MASTER'].keys())[ind_dit]
+    
+    def _find(self, key, key_type=None):
+        """Find a file in the file dictionary given the `key` and an 
+        optional `key_type` (usually `fpet` or `une`).
+        """
+        assert key in self.file_dict, f"No {key} found"
+        if key_type is not None:
+            keys = list(self.file_dict[key].keys()) # Paths to each file (we want the FPET one)
+            available_keys = [x.split('/')[-2].split('_')[-1] for x in keys] # Usually ['flat', 'fpet', 'calib']
+            assert key_type in available_keys, f'No `{key}` file found'
+            return keys[available_keys.index(key_type)]
+        
+        return self.file_dict[key]
+            
+        
+    @typechecked
+    def obs_staring(self, verbose: bool = True, check_existing: bool = True) -> None:
+        """Method for running ``cr2res_obs_staring``.
+
+        Parameters
+        ----------
+            verbose (bool, optional): Print output produced by ``esorex``. 
+            check_existing (bool, optional): 
+                Search for existing extracted spectra in the product folder.
+                Avoids re-reducing existing files.
+
+        Returns
+        --------
+            NoneType
+            None
+        """
+        self._print_section("Process staring frames", recipe_name="cr2res_obs_staring")
+
+        indices = self.header_data["DPR.CATG"] == "SCIENCE"
+
+        # Create output folder
+        output_dir = self.product_folder / "obs_staring"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # Wavelength setting and DIT
+        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
+        print(science_wlen, science_dit)
+        
+        print(f"Number of exposures: {science_idx.size}")
+        
+        # Find master FLAT
+        master_flat_filename, master_flat_label = self._find_master_flat()
+        # Find dark BPM
+        bpm_file = self._find_bpm(science_wlen, science_dit)
+        # Find master DARK
+        master_dark_filename = self._find_master_dark(science_dit, 'CAL_DARK_MASTER')
+        # Find wave TRACE TABLE (TW)
+        wave_tw_file = self._find("UTIL_WAVE_TW", "fpet")
+        
+        # Determine starting index (avoid re-reducing files...)
+        start = 0
+        if check_existing:
+            folder = self.product_folder / "obs_staring"
+            name_pattern = "cr2res_obs_staring_extracted*.fits"
+            files_i = sorted([int(x.stem.split('_')[-1]) for x in folder.glob(name_pattern)])
+            if len(files_i)>1:
+                start = int(files_i[-1] + 1)
+                print(f'Found {len(files_i)} files')
+                print(f'Reducing from file {start}')
+        
+        # Iterate over exposures
+        for i, i_row in enumerate(self.header_data.index[science_idx], start=1):
+            if i < start: # skip existing reduced files
+                continue
+            # Create SOF file **for each frame**
+            sof_file = pathlib.Path(output_dir / f"stare_{i+1:03d}.sof")
+            sof_open = open(sof_file, "w", encoding="utf-8")
+            file_0 = self.header_data["ORIGFILE"][i_row]
+            file_path_0 = f"{self.path}/raw/{file_0}"
+            header_0 = fits.getheader(file_path_0)
+            
+            tech = header_0["ESO DPR TECH"].split(",")[-1]
+            staring_label = "OBS_STARING_{:}".format(tech)
+
+            sof_open.write(f"{file_path_0} {staring_label}\n")
+            self._update_files(staring_label, file_path_0)
+
+            # Write calibration files to SOF (for each file)
+            sof_open.write(f"{master_flat_filename} {master_flat_label}\n")
+            sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+            sof_open.write(f"{master_dark_filename} CAL_DARK_MASTER\n")
+            sof_open.write(f"{wave_tw_file} UTIL_WAVE_TW\n")
+            sof_open.close()
+            
+            # Create EsoRex config file
+            self._create_config("cr2res_obs_staring", "obs_staring", verbose)
+            
+            # RUN EsoRex
+            print()
+            config_file = self.config_folder / "obs_staring.rc"
+
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={output_dir}",
+                "cr2res_obs_staring",
+                sof_file,
+            ]
+            
+            stdout = subprocess.DEVNULL
+            if verbose: stdout = None
+            
+            print("Running EsoRex...", end="", flush=True)
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+            print(" [DONE]\n")
+            
+            
+            # Rename EsoRex output to avoid overwriting
+            key_labels = {"slitfunc":"OBS_STARING_SLITFUNC",
+                          "model": "OBS_STARING_SLITMODEL", 
+                          "extracted": "OBS_STARING_EXTRACT"}
+            
+            for key,value in key_labels.items():
+                file = pathlib.Path(output_dir / f"cr2res_obs_staring_{key}.fits")
+                new_file = file.parent / f"cr2res_obs_staring_{key}_{i+1:03d}.fits"
+                file.rename(new_file)
+    
+                self._update_files(value, new_file)
+                
+        # Write updated dictionary to JSON file
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+        return None
+                
     @typechecked
     def obs_nodding(
         self,
@@ -4999,6 +5161,32 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+            
+    def load_fits(self, fits_file):
+        """Read FITS file containing a single exposure
+        Return wavelength, flux, and flux error arrays with dimension (detector, order, pixel)
+
+        Args:
+            fits_file (path): Path to file.
+
+        Returns:
+            wave: array
+            flux: array
+            flux_err: array
+        """
+        
+        
+        with fits.open(fits_file) as hdul:
+            # hdul.info()
+            wave, flux, flux_err = (np.zeros((3, 7, 2048)) for _ in range(3)) # (detector, order, pixel)
+            for nDet in range(3):
+                columns = hdul[nDet+1].columns
+                data = hdul[nDet+1].data
+                wave[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("WL")])
+                flux[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("SPEC")])
+                flux_err[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("ERR")])
+            swap = lambda x: np.swapaxes(x, 0, 1) # swap detector and order axes
+        return swap(wave), swap(flux), swap(flux_err)
 
     @typechecked
     def plot_spectra(
