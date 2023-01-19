@@ -2908,10 +2908,11 @@ class Pipeline:
         NoneType
             None
         """
-        
-        labels = {"une": "Determine", "fpet": "Refine", "staring": "Correct"} # display text
-        assert calib_type in labels.keys(), 'The argument of "calib_type" is not recognized.'
-        self._print_section(f"{labels[calib_type]} wavelength solution", recipe_name="cr2res_util_wave")
+        # Labels for text display
+        labels = {"une": "Determine", "fpet": "Refine", "staring": "Correct"}   
+        assert calib_type in labels.keys(),  '"calib_type" is not recognized.'
+        self._print_section(f"{labels[calib_type]} wavelength solution", 
+                            recipe_name="cr2res_util_wave")
 
         # Create output folder
         output_dir = self.calib_folder / f"util_wave_{calib_type}"
@@ -3044,7 +3045,9 @@ class Pipeline:
 
         # Create EsoRex configuration file if not found
 
-        self._create_config("cr2res_util_wave", f"util_wave_{calib_type}", verbose)
+        self._create_config("cr2res_util_wave", 
+                            f"util_wave_{calib_type}",
+                            verbose)
 
         # Run EsoRex
 
@@ -3129,13 +3132,14 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
-            
+
     def _find_master_flat(self):
         """Find suitable master flat file from the file dictionary.
 
         Returns:
             master_flat_filename: Path to file.
-            good_key: type of master flat (`UTIL_MASTER_FLAT` or `CAL_MASTER_FLAT`)
+            good_key: type of master flat (`UTIL_MASTER_FLAT`, 
+            `CAL_MASTER_FLAT`)
         """
         
         master_flat_keys = ['UTIL_MASTER_FLAT', 'CAL_MASTER_FLAT']
@@ -5161,32 +5165,6 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
-            
-    def load_fits(self, fits_file):
-        """Read FITS file containing a single exposure
-        Return wavelength, flux, and flux error arrays with dimension (detector, order, pixel)
-
-        Args:
-            fits_file (path): Path to file.
-
-        Returns:
-            wave: array
-            flux: array
-            flux_err: array
-        """
-        
-        
-        with fits.open(fits_file) as hdul:
-            # hdul.info()
-            wave, flux, flux_err = (np.zeros((3, 7, 2048)) for _ in range(3)) # (detector, order, pixel)
-            for nDet in range(3):
-                columns = hdul[nDet+1].columns
-                data = hdul[nDet+1].data
-                wave[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("WL")])
-                flux[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("SPEC")])
-                flux_err[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("ERR")])
-            swap = lambda x: np.swapaxes(x, 0, 1) # swap detector and order axes
-        return swap(wave), swap(flux), swap(flux_err)
 
     @typechecked
     def plot_spectra(
