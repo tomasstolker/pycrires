@@ -1,9 +1,9 @@
 import os
-import pytest
 import shutil
 import tarfile
 
-from urllib.request import urlretrieve
+import pooch
+import pytest
 
 import pycrires
 
@@ -20,28 +20,34 @@ class TestPipeline:
 
         url = "https://home.strw.leidenuniv.nl/~stolker/pycrires/test_data.tgz"
         data_file = self.test_dir + "raw/test_data.tgz"
-        urlretrieve(url, data_file)
+
+        pooch.retrieve(
+            url=url,
+            known_hash="7392f4be894470a08cbf565fe35d97f71606b07d3a3a692f3f9b38cddc5eb695",
+            fname="test_data.tgz",
+            path=os.path.join(self.test_dir, "raw"),
+            progressbar=True,
+        )
 
         with tarfile.open(data_file) as open_tar:
             def is_within_directory(directory, target):
-                
+
                 abs_directory = os.path.abspath(directory)
                 abs_target = os.path.abspath(target)
-            
+
                 prefix = os.path.commonprefix([abs_directory, abs_target])
-                
+
                 return prefix == abs_directory
-            
+
             def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
-            
+
                 for member in tar.getmembers():
                     member_path = os.path.join(path, member.name)
                     if not is_within_directory(path, member_path):
                         raise Exception("Attempted Path Traversal in Tar File")
-            
-                tar.extractall(path, members, numeric_owner=numeric_owner) 
-                
-            
+
+                tar.extractall(path, members, numeric_owner=numeric_owner)
+
             safe_extract(open_tar, data_folder)
 
         self.limit = 1e-8
@@ -200,7 +206,8 @@ class TestPipeline:
                                        "util_genlines method."
 
         else:
-            self.pipeline.util_wave(calib_type="une", verbose=False)
+            self.pipeline.util_wave(calib_type="une", poly_deg=0, wl_err=0.1, verbose=False)
+            self.pipeline.util_wave(calib_type="une", poly_deg=2, wl_err=0.03, verbose=False)
 
     def test_util_calib_fpet(self) -> None:
 
@@ -239,7 +246,7 @@ class TestPipeline:
                                        "with calib_type='une'."
 
         else:
-            self.pipeline.util_wave(calib_type="fpet", verbose=False)
+            self.pipeline.util_wave(calib_type="fpet", poly_deg=4, wl_err=0.01, verbose=False)
 
     def test_obs_nodding(self) -> None:
 
@@ -256,10 +263,6 @@ class TestPipeline:
 
         self.pipeline.run_skycalc(pwv=1.0)
 
-    # def test_correct_wavelengths(self) -> None:
-    #
-    #     self.pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
-
     def test_plot_spectra(self) -> None:
 
         if shutil.which("esorex") is None:
@@ -268,12 +271,3 @@ class TestPipeline:
 
         else:
             self.pipeline.plot_spectra(nod_ab="A", telluric=True)
-
-    def test_molecfit_input(self) -> None:
-
-        if shutil.which("esorex") is None:
-            with pytest.raises(FileNotFoundError):
-                self.pipeline.molecfit_input(nod_ab="A")
-
-        else:
-            self.pipeline.molecfit_input(nod_ab="A")

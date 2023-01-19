@@ -40,7 +40,7 @@ Alternatively, in case you want to look into the code, it is best to clone the r
 
 .. code-block:: console
 
-    $ git clone git@github.com:tomasstolker/pycrires.git
+    $ git clone https://github.com/tomasstolker/pycrires.git
 
 Then, the package is installed by running ``pip`` in the local repository folder:
 
@@ -64,9 +64,9 @@ In addition to ``pycrires``, it is required to manually install `EsoRex <https:/
 Testing `pycrires`
 ------------------
 
-The installation can now be tested, for example by starting Python in interactive mode and printing the version number of the installed package:
+The installation can now be tested, for example by starting Python in interactive mode and creating an instance of the ``Pipeline``:
 
 .. code-block:: python
 
     >>> import pycrires
-    >>> pycrires.__version__
+    >>> pipeline = pycrires.Pipeline()

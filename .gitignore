@@ -15,7 +15,7 @@ docs/skycalc_temp.fits
 build/
 dist/
 pycrires.egg-info/
-.coverage
+.coverage*
 .pytest_cache/
 htmlcov/
 coverage.xml
