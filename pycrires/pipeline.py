@@ -5165,6 +5165,33 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+            
+    def load_fits(self, fits_file):
+        """Read FITS file containing a single exposure
+        Return wavelength, flux, and flux error arrays with dimension (detector, order, pixel)
+
+        Args:
+            fits_file (path): Path to file.
+
+        Returns:
+            wave: array
+            flux: array
+            flux_err: array
+        """
+        with fits.open(fits_file) as hdul:
+            # hdul.info()
+            nDetectors = len(hdul) - 1
+            nOrders = len(hdul[1].columns) // 3
+            nPixels = hdul[1].data.field(hdul[1].columns[0].name).size
+            wave, flux, flux_err = (np.zeros((nDetectors, nOrders, nPixels)) for _ in range(3))
+            for nDet in range(3):
+                columns = hdul[nDet+1].columns
+                data = hdul[nDet+1].data
+                wave[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("WL")])
+                flux[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("SPEC")])
+                flux_err[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("ERR")])
+        
+        return wave, flux, flux_err
 
     @typechecked
     def plot_spectra(
@@ -5334,6 +5361,114 @@ class Pipeline:
             plt.savefig(plot_file, dpi=300)
             plt.clf()
             plt.close()
+            
+    @typechecked
+    def plot_extracted(
+        self,
+        nod_ab: str = "A",
+        telluric: bool = False,
+        corrected: bool = False,
+        file_id: int = 0,
+        trim_edges: bool = False,
+    ) -> None:
+        """
+            Method for plotting extracted spectra in a grid of (Detector, Order).
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the extracted spectra are plotted
+            ("A", "B" or "None" for `obs_staring`).
+        telluric : bool
+            Plot a telluric transmission spectrum for comparison. It
+            should have been calculated with
+            :func:`~pycrires.pipeline.Pipeline.run_skycalc`.
+        corrected : bool
+            Plot the wavelength-corrected spectra. The output from
+            :func:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
+        file_id : int
+            File ID number from the FITS filename as produced by
+            :func:`~pycrires.pipeline.Pipeline.obs_nodding`. The
+            numbers consist of three values, starting at 000. To
+            select the first file (that contains 000), set
+            ``file_id=0``. For the second file, which has 001 in
+            its filename, set ``file_id=1``, etc.
+        trim_edges : bool
+            Trim the edges of the spectra to remove the bad pixels.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+        from matplotlib import ticker
+
+        self._print_section("Plot extracted")
+        
+        obs_mode = 'nodding' # by default
+        # Switch to `staring` mode if nod_ab is "None" or ""
+        if nod_ab == "None" or nod_ab == "":
+            obs_mode = 'staring'
+            nod_ab = "" # to keep the filename the same
+
+        folder = self.path / f"product/obs_{obs_mode}/"
+        filename = f"cr2res_obs_{obs_mode}_extracted{nod_ab}_{file_id:03d}.fits"
+        
+        # Use wavelength-corrected spectra instead
+        if corrected:
+            folder = self.path / "product/correct_wavelengths/"
+            filename = f"cr2res_obs_{obs_mode}_extracted{nod_ab}_{file_id:03d}_corr.fits"
+
+        print(f"Spectrum file: {filename}")
+        fits_file = folder / filename
+        # Load data from FITS file
+        wave, flux, flux_err = self.load_fits(fits_file)
+        
+        # Remove the edges of the detector if requested (bad pixels)
+        trim_fun = lambda x: x[:,:,20:-20]
+        if trim_edges:
+            wave = trim_fun(wave)
+            flux = trim_fun(flux)
+            flux_err = trim_fun(flux_err)
+            
+        # Read data shape
+        nDets, nOrders = wave.shape[:2]
+    
+        # Create grid figure
+        fig, ax = plt.subplots(nOrders, nDets, figsize=(nDets*4, nOrders))
+        fig.subplots_adjust(hspace=0.5, wspace=0.1)
+
+        axs = ax.flatten()
+        color_det = ['b','g','r']
+        scale = [] # flux baseline, useful for plotting telluric spectrum
+        for det in range(nDets):
+            ax[0,det].set_title(f'Detector {det}')
+            for order in range(nOrders):
+                ax[order, det].plot(wave[det, order], flux[det, order] / 1e3, 
+                                    c=color_det[det], lw=0.8)
+                ax[order, det].set_xlabel('Wavelength (nm)')
+                ax[order,det].xaxis.set_major_formatter(ticker.FormatStrFormatter("%d"))
+                scale.append(np.median(flux[det, order] / 1e3))
+                
+        # Plot telluric template
+        telluric = True
+        if telluric:
+            tel_spec = self.calib_folder / "run_skycalc/transm_spec.dat"
+            assert os.path.exists(tel_spec), "No telluric spectrum found. Run `run_skycalc` first."
+        
+            tel_w, tel_f = np.loadtxt(tel_spec, unpack=True)
+            
+        for i,axi in enumerate(axs):
+            xlim = axi.get_xlim()
+            scale[i] /= np.median(tel_f)
+            axi.plot(tel_w, tel_f*scale[i], '--k', lw=1., label='Telluric', alpha=0.8)
+            axi.set_xlim(xlim)
+            
+        # settings
+        ax[0, nDets-1].legend(loc=(0.75,1.2), fontsize=10)
+        ax[0,0].set_ylabel('Flux (ADU) \n/ 1e3')
+        fig.suptitle(f'{fits_file.stem}', fontsize=16)
+        plt.show()
 
     @typechecked
     def export_spectra(
