@@ -4264,11 +4264,15 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        print("Model file: run_skycalc/transm_spec.dat")
-        print(f"Spectrum file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
+        # Determine observation mode: nodding or staring
+        obs_mode = "nodding" # by default
+        if nod_ab == "None" or nod_ab == "":
+            obs_mode = "staring"
+            nod_ab = ""
+        print(f"Spectrum file: product/cr2res_obs_{obs_mode}_extracted{nod_ab}.fits")
 
         # Read telluric model
-
+        print("Model file: run_skycalc/transm_spec.dat")
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
@@ -4279,13 +4283,11 @@ class Pipeline:
         print(" [DONE]")
 
         # Read extracted spectra
-
-        fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
-
+        obs_mode_upper = obs_mode.upper()
+        fits_files = list(self.file_dict[f"OBS_{obs_mode_upper}_EXTRACT{nod_ab}"].keys())            
         for fits_file in fits_files:
 
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
-
             hdu_list = fits.open(fits_file)
 
             print(" [DONE]")
@@ -5192,6 +5194,7 @@ class Pipeline:
                 flux_err[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("ERR")])
         
         return wave, flux, flux_err
+            
 
     @typechecked
     def plot_spectra(
