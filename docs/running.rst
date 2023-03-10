@@ -54,9 +54,12 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_calib(calib_type='fpet', verbose=False)
   pipeline.util_extract(calib_type='fpet', verbose=False)
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
-  pipeline.obs_nodding(verbose=False, correct_bad_pixels=True)
-  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
+  pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
   pipeline.run_skycalc(pwv=1.)
+  pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
+
+.. tip::
+  The ``obs_nodding`` method has a long runtime with ``extraction_required=True``. In case the 1D spectra from its output are not required, it is recommended to set ``extraction_required=False``, for example when a 2D extraction will be done with ``custom_extract_2d`` (see below). The extracted spectra by ``obs_nodding`` should be ignored in that case since they will have a low accuracy. That is fine, because the extraction will be done separately with the dedicated method that maintains the spatial dimension.
 
 Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there are dedicated methods for extracting 2D spectra (so maintaining the spatial dimension):
 
