@@ -2,6 +2,7 @@
 Module with the pipeline functionalities of ``pycrires``.
 """
 
+import glob
 import json
 import logging
 import os
@@ -44,7 +45,7 @@ class Pipeline:
     """
 
     @typechecked
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: Optional[str] = None) -> None:
         """
         Parameters
         ----------
@@ -52,7 +53,8 @@ class Pipeline:
             Path of the main reduction folder. The main folder should
             contain a subfolder called ``raw`` where the raw data
             (both science and calibration) from the ESO archive are
-            stored.
+            stored. The current working folder is used if the arguments
+            of ``path`` is set to ``None``.
 
         Returns
         -------
@@ -65,6 +67,10 @@ class Pipeline:
         )
 
         # Absolute path of the main reduction folder
+
+        if path is None:
+            path = "./"
+
         self.path = pathlib.Path(path).resolve()
 
         print(f"Data reduction folder: {self.path}")
@@ -254,7 +260,7 @@ class Pipeline:
             header = self.header_data[key][science_index].to_numpy()
 
             if isinstance(header[0], str):
-                indices = np.where(header is not None)[0]
+                indices = np.argwhere(header)
 
             else:
                 indices = ~np.isnan(header)
@@ -477,10 +483,11 @@ class Pipeline:
                 )
 
             elif eso_recipe == "cr2res_util_calib":
-                config_text = config_text.replace(
-                    "cr2res.cr2res_util_calib.collapse=NONE",
-                    "cr2res.cr2res_util_calib.collapse=MEAN",
-                )
+                if pipeline_method != "util_calib_nodding":
+                    config_text = config_text.replace(
+                        "cr2res.cr2res_util_calib.collapse=NONE",
+                        "cr2res.cr2res_util_calib.collapse=MEAN",
+                    )
 
                 if pipeline_method == "util_calib_une":
                     # From the manual: If there remain detector
@@ -1929,7 +1936,7 @@ class Pipeline:
         Parameters
         ----------
         calib_type : str
-            Calibration type ("flat", "une", "fpet").
+            Calibration type ("flat", "une", "fpet", "nodding").
         verbose : bool
             Print output produced by ``esorex``.
 
@@ -1947,6 +1954,9 @@ class Pipeline:
 
         elif calib_type == "fpet":
             self._print_section("Create master FPET", recipe_name="cr2res_util_calib")
+
+        elif calib_type == "nodding":
+            self._print_section("Calibrate nodding data", recipe_name="cr2res_util_calib")
 
         else:
             raise RuntimeError("The argument of 'calib_type' is not recognized.")
@@ -1988,6 +1998,9 @@ class Pipeline:
             if indices.sum() == 0:
                 self._download_archive("WAVE,FPET", None)
 
+        elif calib_type == "nodding":
+            indices = self.header_data["DPR.CATG"] == "SCIENCE"
+
         if indices.sum() == 0:
             raise RuntimeError(
                 f"Could not find a raw calibration "
@@ -2007,15 +2020,15 @@ class Pipeline:
 
         unique_dit = list(unique_dit)
 
-        # Only process FLAT from a single DIT
+        # Only process data from a single DIT
 
         if len(unique_dit) == 1:
             dit_item = unique_dit[0]
 
         elif len(unique_dit) > 1:
             dit_item = input(
-                "Which DIT of the FLAT files should be used "
-                "for creating the UTIL_CALIB file?"
+                f"There are {calib_type} data with multiple DIT "
+                f"values: {unique_dit}. Which DIT should be selected?"
             )
 
             dit_item = float(dit_item)
@@ -2034,6 +2047,7 @@ class Pipeline:
 
                 if calib_dit == dit_item:
                     file_path = f"{self.path}/raw/{item}"
+                    header_tmp = fits.getheader(file_path)
 
                     if calib_type == "flat":
                         sof_open.write(f"{file_path} FLAT\n")
@@ -2046,6 +2060,16 @@ class Pipeline:
                     elif calib_type == "fpet":
                         sof_open.write(f"{file_path} WAVE_FPET\n")
                         self._update_files("WAVE_FPET", file_path)
+
+                    elif calib_type == "nodding":
+                        if "ESO DPR TECH" in header_tmp:
+                            if header_tmp["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
+                                sof_open.write(f"{file_path} OBS_NODDING_OTHER\n")
+                                self._update_files("OBS_NODDING_OTHER", file_path)
+
+                            elif header_tmp["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
+                                sof_open.write(f"{file_path} OBS_NODDING_JITTER\n")
+                                self._update_files("OBS_NODDING_JITTER", file_path)
 
             # Find master dark
 
@@ -2163,12 +2187,19 @@ class Pipeline:
 
         print("Output files:")
 
-        fits_file = (
-            f"{self.path}/calib/util_calib_{calib_type}"
-            + "/cr2res_util_calib_calibrated_collapsed.fits"
-        )
+        if calib_type == "nodding":
+            fits_files = sorted(glob.glob(f"{output_dir}/CRIRES_SPEC_*_calibrated.fits"))
 
-        self._update_files("UTIL_CALIB", fits_file)
+            for file_item in fits_files:
+                self._update_files("UTIL_CALIB", file_item)
+
+        else:
+            fits_file = (
+                f"{self.path}/calib/util_calib_{calib_type}"
+                + "/cr2res_util_calib_calibrated_collapsed.fits"
+            )
+
+            self._update_files("UTIL_CALIB", fits_file)
 
         # Create plots
 
@@ -2908,11 +2939,16 @@ class Pipeline:
         NoneType
             None
         """
+
         # Labels for text display
-        labels = {"une": "Determine", "fpet": "Refine", "staring": "Correct"}   
-        assert calib_type in labels.keys(),  '"calib_type" is not recognized.'
-        self._print_section(f"{labels[calib_type]} wavelength solution", 
-                            recipe_name="cr2res_util_wave")
+
+        labels = {"une": "Determine", "fpet": "Refine", "staring": "Correct"}
+
+        assert calib_type in labels.keys(), '"calib_type" is not recognized.'
+
+        self._print_section(
+            f"{labels[calib_type]} wavelength solution", recipe_name="cr2res_util_wave"
+        )
 
         # Create output folder
         output_dir = self.calib_folder / f"util_wave_{calib_type}"
@@ -3045,9 +3081,7 @@ class Pipeline:
 
         # Create EsoRex configuration file if not found
 
-        self._create_config("cr2res_util_wave", 
-                            f"util_wave_{calib_type}",
-                            verbose)
+        self._create_config("cr2res_util_wave", f"util_wave_{calib_type}", verbose)
 
         # Run EsoRex
 
@@ -3134,127 +3168,145 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     def _find_master_flat(self):
-        """Find suitable master flat file from the file dictionary.
-
-        Returns:
-            master_flat_filename: Path to file.
-            good_key: type of master flat (`UTIL_MASTER_FLAT`, 
-            `CAL_MASTER_FLAT`)
         """
-        
-        master_flat_keys = ['UTIL_MASTER_FLAT', 'CAL_MASTER_FLAT']
+        Find a suitable master flat file from the file dictionary.
+
+        Returns
+        -------
+        master_flat_filename : str
+            Path to file.
+        good_key : str
+            Type of master flat (`UTIL_MASTER_FLAT`, `CAL_MASTER_FLAT`)
+        """
+
+        master_flat_keys = ["UTIL_MASTER_FLAT", "CAL_MASTER_FLAT"]
         which_key = [key in self.file_dict for key in master_flat_keys]
         assert True in which_key, "No master flat found"
-        
-        # print(which_key)
+
         if all(which_key):
             print("WARNING: Multiple master flats found. Using UTIL_MASTER_FLAT")
             which_key[1] = False
+
         good_key = master_flat_keys[which_key.index(True)]
-        # print(good_key)
         master_flat_filename = list(self.file_dict[good_key])[0]
         print(master_flat_filename)
-        key_value = self.file_dict[good_key]
-        file_name = master_flat_filename.split("/")[-2:]
+
+        # key_value = self.file_dict[good_key]
+        # file_name = master_flat_filename.split("/")[-2:]
         # print(f"   - calib/{file_name[-2]}/{file_name[-1]} {good_key}")
+
         return master_flat_filename, good_key
-    
+
     def _find_bpm(self, science_wlen, science_dit):
         assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
         bpm_file = self.select_bpm(science_wlen, science_dit)
         file_name = bpm_file.split("/")[-2:]
         print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+
         return bpm_file
-    
-    def _find_master_dark(self, science_dit, key='CAL_DARK_MASTER'):
+
+    def _find_master_dark(self, science_dit, key="CAL_DARK_MASTER"):
         assert key in self.file_dict, f"No {key} BPM found"
-        
-        dits = [f['DIT'] for f in self.file_dict[key].values()]
+
+        dits = [f["DIT"] for f in self.file_dict[key].values()]
         assert True in np.isclose(science_dit, dits, 1e-2), "No matching DIT found"
         ind_dit = list(np.isclose(science_dit, dits, 1e-2)).index(True)
-        return list(self.file_dict['CAL_DARK_MASTER'].keys())[ind_dit]
-    
+
+        return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
+
     def _find(self, key, key_type=None):
-        """Find a file in the file dictionary given the `key` and an 
-        optional `key_type` (usually `fpet` or `une`).
         """
+        Find a file in the file dictionary given the `key`
+        and an  optional `key_type` (usually `fpet` or `une`).
+        """
+
         assert key in self.file_dict, f"No {key} found"
+
         if key_type is not None:
-            keys = list(self.file_dict[key].keys()) # Paths to each file (we want the FPET one)
-            available_keys = [x.split('/')[-2].split('_')[-1] for x in keys] # Usually ['flat', 'fpet', 'calib']
-            assert key_type in available_keys, f'No `{key}` file found'
+            keys = list(
+                self.file_dict[key].keys()
+            )  # Paths to each file (we want the FPET one)
+            available_keys = [
+                x.split("/")[-2].split("_")[-1] for x in keys
+            ]  # Usually ['flat', 'fpet', 'calib']
+            assert key_type in available_keys, f"No `{key}` file found"
             return keys[available_keys.index(key_type)]
-        
+
         return self.file_dict[key]
-            
-        
+
     @typechecked
     def obs_staring(self, verbose: bool = True, check_existing: bool = True) -> None:
-        """Method for running ``cr2res_obs_staring``.
+        """
+        Method for running ``cr2res_obs_staring``.
 
         Parameters
         ----------
-            verbose (bool, optional): Print output produced by ``esorex``. 
-            check_existing (bool, optional): 
-                Search for existing extracted spectra in the product folder.
-                Avoids re-reducing existing files.
+        verbose : bool
+            Print output produced by ``esorex``.
+        check_existing : bool
+            Search for existing extracted spectra in the product
+            folder. Avoids re-reducing existing files.
 
         Returns
         --------
-            NoneType
+        NoneType
             None
         """
+
         self._print_section("Process staring frames", recipe_name="cr2res_obs_staring")
 
-        indices = self.header_data["DPR.CATG"] == "SCIENCE"
+        # indices = self.header_data["DPR.CATG"] == "SCIENCE"
 
         # Create output folder
         output_dir = self.product_folder / "obs_staring"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            
+
         # Wavelength setting and DIT
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
         science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
         print(science_wlen, science_dit)
-        
+
         print(f"Number of exposures: {science_idx.size}")
-        
+
         # Find master FLAT
         master_flat_filename, master_flat_label = self._find_master_flat()
         # Find dark BPM
         bpm_file = self._find_bpm(science_wlen, science_dit)
         # Find master DARK
-        master_dark_filename = self._find_master_dark(science_dit, 'CAL_DARK_MASTER')
+        master_dark_filename = self._find_master_dark(science_dit, "CAL_DARK_MASTER")
         # Find wave TRACE TABLE (TW)
         wave_tw_file = self._find("UTIL_WAVE_TW", "fpet")
-        
+
         # Determine starting index (avoid re-reducing files...)
         start = 0
         if check_existing:
             folder = self.product_folder / "obs_staring"
             name_pattern = "cr2res_obs_staring_extracted*.fits"
-            files_i = sorted([int(x.stem.split('_')[-1]) for x in folder.glob(name_pattern)])
-            if len(files_i)>1:
+            files_i = sorted(
+                [int(x.stem.split("_")[-1]) for x in folder.glob(name_pattern)]
+            )
+            if len(files_i) > 1:
                 start = int(files_i[-1] + 1)
-                print(f'Found {len(files_i)} files')
-                print(f'Reducing from file {start}')
-        
+                print(f"Found {len(files_i)} files")
+                print(f"Reducing from file {start}")
+
         # Iterate over exposures
         for i, i_row in enumerate(self.header_data.index[science_idx], start=1):
-            if i < start: # skip existing reduced files
+            if i < start:  # skip existing reduced files
                 continue
+
             # Create SOF file **for each frame**
             sof_file = pathlib.Path(output_dir / f"stare_{i+1:03d}.sof")
             sof_open = open(sof_file, "w", encoding="utf-8")
             file_0 = self.header_data["ORIGFILE"][i_row]
             file_path_0 = f"{self.path}/raw/{file_0}"
             header_0 = fits.getheader(file_path_0)
-            
+
             tech = header_0["ESO DPR TECH"].split(",")[-1]
-            staring_label = "OBS_STARING_{:}".format(tech)
+            staring_label = f"OBS_STARING_{tech}"
 
             sof_open.write(f"{file_path_0} {staring_label}\n")
             self._update_files(staring_label, file_path_0)
@@ -3265,10 +3317,10 @@ class Pipeline:
             sof_open.write(f"{master_dark_filename} CAL_DARK_MASTER\n")
             sof_open.write(f"{wave_tw_file} UTIL_WAVE_TW\n")
             sof_open.close()
-            
+
             # Create EsoRex config file
             self._create_config("cr2res_obs_staring", "obs_staring", verbose)
-            
+
             # RUN EsoRex
             print()
             config_file = self.config_folder / "obs_staring.rc"
@@ -3280,37 +3332,41 @@ class Pipeline:
                 "cr2res_obs_staring",
                 sof_file,
             ]
-            
+
             stdout = subprocess.DEVNULL
-            if verbose: stdout = None
-            
+
+            if verbose:
+                stdout = None
+
             print("Running EsoRex...", end="", flush=True)
             subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
             print(" [DONE]\n")
-            
-            
+
             # Rename EsoRex output to avoid overwriting
-            key_labels = {"slitfunc":"OBS_STARING_SLITFUNC",
-                          "model": "OBS_STARING_SLITMODEL", 
-                          "extracted": "OBS_STARING_EXTRACT"}
-            
-            for key,value in key_labels.items():
+            key_labels = {
+                "slitfunc": "OBS_STARING_SLITFUNC",
+                "model": "OBS_STARING_SLITMODEL",
+                "extracted": "OBS_STARING_EXTRACT",
+            }
+
+            for key, value in key_labels.items():
                 file = pathlib.Path(output_dir / f"cr2res_obs_staring_{key}.fits")
                 new_file = file.parent / f"cr2res_obs_staring_{key}_{i+1:03d}.fits"
                 file.rename(new_file)
-    
+
                 self._update_files(value, new_file)
-                
+
         # Write updated dictionary to JSON file
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
-        return None
-                
+
     @typechecked
     def obs_nodding(
         self,
         verbose: bool = True,
         correct_bad_pixels: bool = True,
+        extraction_required: bool = True,
+        sof_calib=None
     ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
@@ -3324,6 +3380,18 @@ class Pipeline:
             ``skimage.restoration.inpaint``. If set to
             ``False``, the bad pixels will remain as NaN
             in the output images.
+        extraction_required : bool
+            Set to ``True`` if accuracy of the extracted 1D spectra
+            is important. Set to ``False`` if the extraction will
+            be done separately, e.g. with
+            :func:`~pycrires.pipeline.Pipeline.custom_extract_2d`.
+            In the latter case, the extracted spectra that are
+            part of the output from
+            :func:`~pycrires.pipeline.Pipeline.obs_nodding` should
+            be ignored. The advantage of setting the argument to
+            ``False`` is that it very much decreases the
+            computation time since the ``extract_height`` and
+            ``extract_oversample`` will be adjusted.
 
         Returns
         -------
@@ -3388,6 +3456,43 @@ class Pipeline:
 
         count_exp = 0
 
+        # Check if there are already calibrated nodding data
+        # in the util_calib_nodding folder. In that case, use
+        # those data instead of the raw nodding data
+
+        found_calib_nodding = False
+
+        if os.path.exists(self.calib_folder / "util_calib_nodding"):
+            files_raw_a = self.header_data[nod_a_exp]['ORIGFILE']
+            files_raw_b = self.header_data[nod_b_exp]['ORIGFILE']
+            files_raw = list(files_raw_a) + list(files_raw_b)
+
+            files_cal = glob.glob(str(self.calib_folder) +
+                                  "/util_calib_nodding/"
+                                  "CRIRES_SPEC_*_calibrated.fits")
+
+            for file_idx, file_item in enumerate(files_cal):
+                files_cal[file_idx] = os.path.basename(file_item).replace("_calibrated", "")
+
+            files_raw = set(files_raw)
+            files_cal = set(files_cal)
+
+            print(f"\nNumber of raw exposures: {len(files_raw)}")
+            print(f"Number of calibrated exposures: {len(files_cal)}")
+
+            if set(files_raw) == set(files_cal):
+                print("\nThe calibrated files match with the raw "
+                      "files so will continue processing the "
+                      "calibrated data from the calib/"
+                      "util_calib_nodding folder.")
+
+                found_calib_nodding = True
+
+            else:
+                print("\nThe calibrated files do not exactly match "
+                      "with the raw files so will continue processing "
+                      "the raw nodding data from the 'raw' folder.")
+
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
             print(
@@ -3409,29 +3514,38 @@ class Pipeline:
 
             else:
                 warnings.warn(
-                    f"Can not find nod B data to use "
-                    f"in combination with the nod A "
-                    f"data of {file_0} so will skip "
-                    f"this file."
+                    f"Can not find nod B data to use in "
+                    f"combination with the nod A data of "
+                    f"{file_0} so will skip this file."
                 )
 
                 continue
 
-            file_path_0 = f"{self.path}/raw/{file_0}"
-            file_path_1 = f"{self.path}/raw/{file_1}"
+            if found_calib_nodding:
+                file_path_0 = f"{self.path}/calib/util_calib_nodding/{file_0[:-5]}_calibrated.fits"
+                file_path_1 = f"{self.path}/calib/util_calib_nodding/{file_1[:-5]}_calibrated.fits"
+
+            else:
+                file_path_0 = f"{self.path}/raw/{file_0}"
+                file_path_1 = f"{self.path}/raw/{file_1}"
 
             header_0 = fits.getheader(file_path_0)
             # header_1 = fits.getheader(file_path_1)
 
-            if "ESO DPR TECH" in header_0:
-                if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
+            if found_calib_nodding:
+                check_key = "ESO PRO TECH"
+            else:
+                check_key = "ESO DPR TECH"
+
+            if check_key in header_0:
+                if header_0[check_key] == "SPECTRUM,NODDING,OTHER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
                     self._update_files("OBS_NODDING_OTHER", file_path_0)
 
                     sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
                     self._update_files("OBS_NODDING_OTHER", file_path_1)
 
-                elif header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
+                elif header_0[check_key] == "SPECTRUM,NODDING,JITTER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_JITTER\n")
                     self._update_files("OBS_NODDING_JITTER", file_path_0)
 
@@ -3440,51 +3554,57 @@ class Pipeline:
 
             else:
                 raise RuntimeError(
-                    f"Could not find ESO.DPR.TECH in " f"the header of {file_path_0}."
+                    f"Could not find {check_key} in the header of {file_path_0}."
                 )
+                
+
 
             # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
 
-            file_found = False
+            if not found_calib_nodding:
 
-            if "UTIL_MASTER_FLAT" in self.file_dict:
-                for key in self.file_dict["UTIL_MASTER_FLAT"]:
-                    if not file_found:
-                        file_name = key.split("/")[-2:]
-                        print(
-                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
-                        )
-                        sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
-                        file_found = True
+                file_found = False
 
-            if "CAL_FLAT_MASTER" in self.file_dict:
-                for key in self.file_dict["CAL_FLAT_MASTER"]:
-                    if not file_found:
-                        file_name = key.split("/")[-2:]
-                        print(
-                            f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
-                        )
-                        sof_open.write(f"{key} CAL_FLAT_MASTER\n")
-                        file_found = True
+                if "UTIL_MASTER_FLAT" in self.file_dict:
+                    for key in self.file_dict["UTIL_MASTER_FLAT"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
+                            print(
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
+                            )
+                            sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
+                            file_found = True
 
-            if not file_found:
-                warnings.warn("Could not find a master flat.")
+                if "CAL_FLAT_MASTER" in self.file_dict:
+                    for key in self.file_dict["CAL_FLAT_MASTER"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
+                            print(
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
+                            )
+                            sof_open.write(f"{key} CAL_FLAT_MASTER\n")
+                            file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find a master flat.")
 
             # Find CAL_DARK_BPM file
 
-            file_found = False
+            if not found_calib_nodding:
 
-            if "CAL_DARK_BPM" in self.file_dict:
-                bpm_file = self.select_bpm(science_wlen, science_dit)
+                file_found = False
 
-                if bpm_file is not None:
-                    file_name = bpm_file.split("/")[-2:]
-                    print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
-                    sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
-                    file_found = True
+                if "CAL_DARK_BPM" in self.file_dict:
+                    bpm_file = self.select_bpm(science_wlen, science_dit)
 
-            if not file_found:
-                warnings.warn("Could not find a bap pixel map.")
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find a bap pixel map.")
 
             # Find UTIL_WAVE_TW file
 
@@ -3540,6 +3660,11 @@ class Pipeline:
             if not file_found:
                 warnings.warn("Could not find CAL_DETLIN_COEFFS.")
 
+
+            if sof_calib is not None:
+                for k,v in sof_calib.items():
+                    print(f'{k} -- {v}')
+                    sof_open.write(f"{v} {k}\n") # key is the type of file, value is the path to the file
             sof_open.close()
 
             # Create EsoRex configuration file if not found
@@ -3556,9 +3681,26 @@ class Pipeline:
                 "esorex",
                 f"--recipe-config={config_file}",
                 f"--output-dir={output_dir}",
-                "cr2res_obs_nodding",
-                sof_file,
+                "cr2res_obs_nodding"
             ]
+
+            if not extraction_required:
+                esorex.extend(["--extract_height=1", "--extract_oversample=3"])
+
+                warnings.warn("Setting extract_height=1 and "
+                              "extract_oversample=3 since "
+                              "extraction_required=False to decrease "
+                              "runtime. The extracted spectra from "
+                              "obs_nodding will therefore not be "
+                              "accurate so it is required to either "
+                              "set extraction_required=True if 1D "
+                              "spectra are needed or to use the "
+                              "custom_extract_2d method after running "
+                              "obs_nodding for a 2D extraction of the "
+                              "spectra in order to maintain the "
+                              "spatial dimension.")
+
+            esorex.append(sof_file)
 
             if verbose:
                 stdout = None
@@ -3727,6 +3869,34 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+            
+    @staticmethod
+    def find_calib(path: pathlib.Path):
+        '''Find the calibration files for the nodding observations provided 
+        a path to a previosuly reduced data set.
+        
+        Parameters
+        ----------
+            path : pathlib.Path
+                path to the directory containing the reduced data (with subdirectory /product/obs_nodding/)
+        
+        Returns
+        ----------
+            sof_dict : dict 
+                (keys are the file types, values are the file names)
+        
+        '''
+        calib_path = path / 'product/obs_nodding/'
+        assert calib_path.exists()
+        sof_files = sorted(calib_path.glob('*.sof'))
+        assert len(sof_files)>0, 'No SOF files found in {}'.format(calib_path)
+        sof_read = np.loadtxt(sof_files[0], dtype=str)
+        # rearrange the SOF file into a dictionary
+        sof_dict = {x[1]:x[0] for x in sof_read}
+        # remove the files that are not needed for the calibration
+        sof_dict.pop('OBS_NODDING_OTHER')
+        print(sof_dict)
+        return sof_dict
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
@@ -4164,7 +4334,7 @@ class Pipeline:
             telluric_template[:, 0],
             telluric_template[:, 1],
             kind="linear",
-            bounds_error=True,
+            bounds_error=False,
         )
 
         # Remove continuum and nans of spectra.
@@ -4264,30 +4434,29 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Determine observation mode: nodding or staring
-        obs_mode = "nodding" # by default
-        if nod_ab == "None" or nod_ab == "":
-            obs_mode = "staring"
-            nod_ab = ""
-        print(f"Spectrum file: product/cr2res_obs_{obs_mode}_extracted{nod_ab}.fits")
+        print("Model file: run_skycalc/transm_spec.dat")
+        print(f"Spectrum file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
 
         # Read telluric model
-        print("Model file: run_skycalc/transm_spec.dat")
+
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-        transm_interp = interpolate.interp1d(
-            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        )
+
+        # transm_interp = interpolate.interp1d(
+        #     transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        # )
 
         print(" [DONE]")
 
         # Read extracted spectra
-        obs_mode_upper = obs_mode.upper()
-        fits_files = list(self.file_dict[f"OBS_{obs_mode_upper}_EXTRACT{nod_ab}"].keys())            
+
+        fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
+
         for fits_file in fits_files:
 
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
+
             hdu_list = fits.open(fits_file)
 
             print(" [DONE]")
@@ -4500,7 +4669,7 @@ class Pipeline:
 
                     template_std = np.std(transm_spec[wl_mask, 1])
 
-                    if not template_std > minimum_strength:
+                    if template_std < minimum_strength:
                         warnings.warn(
                             "Not enough telluric features to "
                             f"correct wavelength for detector "
@@ -4514,7 +4683,7 @@ class Pipeline:
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
                             # Calculate wavelength solution using cross-correlation
 
-                            cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
+                            _, opt_a, opt_b = self.xcor_wavelength_solution(
                                 spec, wavel, transm_spec, accuracy, window_length
                             )
 
@@ -4994,7 +5163,7 @@ class Pipeline:
 
     @typechecked
     def fit_gaussian(
-        self, nod_ab: str = "A", extraction_input: str = "util_extract_2d"
+        self, nod_ab: str = "A", extraction_input: str = "custom_extract_2d"
     ) -> None:
         """
         Method for centering the 2D extracted spectra by fitting a
@@ -5007,6 +5176,11 @@ class Pipeline:
         nod_ab : str
             Nod position of which the extracted spectra will be
             exported to a JSON file ("A" or "B").
+        extraction_input : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed. The options for
+            this argument are either ``'custom_extract_2d'``
+            or ``'util_extract_2d'``.
 
         Returns
         -------
@@ -5024,6 +5198,12 @@ class Pipeline:
             os.makedirs(output_dir)
 
         # List with FITS files that will be processed
+
+        input_options = ["custom_extract_2d", "util_extract_2d"]
+
+        assert extraction_input in input_options, \
+            "The argument of 'extraction_input' should be one of " \
+            f"the following options: {input_options}"
 
         input_folder = self.product_folder / extraction_input
         fits_files = pathlib.Path(input_folder).glob(
@@ -5092,9 +5272,9 @@ class Pipeline:
                         guess = (np.amax(y_data), 0.0, 1.0)
                         nans = np.isnan(y_data)
                         y_data[nans] = 0
-                        result, _ = optimize.curve_fit(
+                        result = optimize.curve_fit(
                             gaussian, x_data, y_data, p0=guess
-                        )
+                        )[0]
 
                         print("\r" + len(print_msg) * " ", end="")
 
@@ -5167,34 +5347,6 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
-            
-    def load_fits(self, fits_file):
-        """Read FITS file containing a single exposure
-        Return wavelength, flux, and flux error arrays with dimension (detector, order, pixel)
-
-        Args:
-            fits_file (path): Path to file.
-
-        Returns:
-            wave: array
-            flux: array
-            flux_err: array
-        """
-        with fits.open(fits_file) as hdul:
-            # hdul.info()
-            nDetectors = len(hdul) - 1
-            nOrders = len(hdul[1].columns) // 3
-            nPixels = hdul[1].data.field(hdul[1].columns[0].name).size
-            wave, flux, flux_err = (np.zeros((nDetectors, nOrders, nPixels)) for _ in range(3))
-            for nDet in range(3):
-                columns = hdul[nDet+1].columns
-                data = hdul[nDet+1].data
-                wave[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("WL")])
-                flux[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("SPEC")])
-                flux_err[nDet,] = np.array([data.field(key) for key in columns.names if key.endswith("ERR")])
-        
-        return wave, flux, flux_err
-            
 
     @typechecked
     def plot_spectra(
@@ -5364,114 +5516,6 @@ class Pipeline:
             plt.savefig(plot_file, dpi=300)
             plt.clf()
             plt.close()
-            
-    @typechecked
-    def plot_extracted(
-        self,
-        nod_ab: str = "A",
-        telluric: bool = False,
-        corrected: bool = False,
-        file_id: int = 0,
-        trim_edges: bool = False,
-    ) -> None:
-        """
-            Method for plotting extracted spectra in a grid of (Detector, Order).
-
-        Parameters
-        ----------
-        nod_ab : str
-            Nod position of which the extracted spectra are plotted
-            ("A", "B" or "None" for `obs_staring`).
-        telluric : bool
-            Plot a telluric transmission spectrum for comparison. It
-            should have been calculated with
-            :func:`~pycrires.pipeline.Pipeline.run_skycalc`.
-        corrected : bool
-            Plot the wavelength-corrected spectra. The output from
-            :func:`~pycrires.pipeline.Pipeline.correct_wavelengths`.
-        file_id : int
-            File ID number from the FITS filename as produced by
-            :func:`~pycrires.pipeline.Pipeline.obs_nodding`. The
-            numbers consist of three values, starting at 000. To
-            select the first file (that contains 000), set
-            ``file_id=0``. For the second file, which has 001 in
-            its filename, set ``file_id=1``, etc.
-        trim_edges : bool
-            Trim the edges of the spectra to remove the bad pixels.
-
-        Returns
-        -------
-        NoneType
-            None
-        """
-        from matplotlib import ticker
-
-        self._print_section("Plot extracted")
-        
-        obs_mode = 'nodding' # by default
-        # Switch to `staring` mode if nod_ab is "None" or ""
-        if nod_ab == "None" or nod_ab == "":
-            obs_mode = 'staring'
-            nod_ab = "" # to keep the filename the same
-
-        folder = self.path / f"product/obs_{obs_mode}/"
-        filename = f"cr2res_obs_{obs_mode}_extracted{nod_ab}_{file_id:03d}.fits"
-        
-        # Use wavelength-corrected spectra instead
-        if corrected:
-            folder = self.path / "product/correct_wavelengths/"
-            filename = f"cr2res_obs_{obs_mode}_extracted{nod_ab}_{file_id:03d}_corr.fits"
-
-        print(f"Spectrum file: {filename}")
-        fits_file = folder / filename
-        # Load data from FITS file
-        wave, flux, flux_err = self.load_fits(fits_file)
-        
-        # Remove the edges of the detector if requested (bad pixels)
-        trim_fun = lambda x: x[:,:,20:-20]
-        if trim_edges:
-            wave = trim_fun(wave)
-            flux = trim_fun(flux)
-            flux_err = trim_fun(flux_err)
-            
-        # Read data shape
-        nDets, nOrders = wave.shape[:2]
-    
-        # Create grid figure
-        fig, ax = plt.subplots(nOrders, nDets, figsize=(nDets*4, nOrders))
-        fig.subplots_adjust(hspace=0.5, wspace=0.1)
-
-        axs = ax.flatten()
-        color_det = ['b','g','r']
-        scale = [] # flux baseline, useful for plotting telluric spectrum
-        for det in range(nDets):
-            ax[0,det].set_title(f'Detector {det}')
-            for order in range(nOrders):
-                ax[order, det].plot(wave[det, order], flux[det, order] / 1e3, 
-                                    c=color_det[det], lw=0.8)
-                ax[order, det].set_xlabel('Wavelength (nm)')
-                ax[order,det].xaxis.set_major_formatter(ticker.FormatStrFormatter("%d"))
-                scale.append(np.median(flux[det, order] / 1e3))
-                
-        # Plot telluric template
-        telluric = True
-        if telluric:
-            tel_spec = self.calib_folder / "run_skycalc/transm_spec.dat"
-            assert os.path.exists(tel_spec), "No telluric spectrum found. Run `run_skycalc` first."
-        
-            tel_w, tel_f = np.loadtxt(tel_spec, unpack=True)
-            
-        for i,axi in enumerate(axs):
-            xlim = axi.get_xlim()
-            scale[i] /= np.median(tel_f)
-            axi.plot(tel_w, tel_f*scale[i], '--k', lw=1., label='Telluric', alpha=0.8)
-            axi.set_xlim(xlim)
-            
-        # settings
-        ax[0, nDets-1].legend(loc=(0.75,1.2), fontsize=10)
-        ax[0,0].set_ylabel('Flux (ADU) \n/ 1e3')
-        fig.suptitle(f'{fits_file.stem}', fontsize=16)
-        plt.show()
 
     @typechecked
     def export_spectra(
