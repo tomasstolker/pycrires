@@ -4709,7 +4709,6 @@ class Pipeline:
         wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis,np.newaxis, :]
                             - mean_wavel) + mean_wavel + b_grid + \
                     c_grid * (used_wavel[np.newaxis, np.newaxis, np.newaxis, :] - mean_wavel)**2
-        print(wl_matrix.shape)
         print('Interpolating telluric template...')
         template = template_interp(wl_matrix) - 1.
 
@@ -4729,7 +4728,6 @@ class Pipeline:
             return  cross_corr, (opt_b, opt_a, opt_c), opt_idx
         else:
             return (opt_b, opt_a, opt_c), opt_idx
-
 
     @typechecked
     def correct_wavelengths(
@@ -5172,18 +5170,17 @@ class Pipeline:
                             plt.sca(axes[order_idx, det_idx])
                             plt.title(f"Detector {det_idx+1}, order {order_idx}")
                             plt.imshow(
-                                cross_corr[:, :, opt_idx[2]],
-                                #extent=[-(N_points+1)/2*accuracy, (N_points+1)/2*accuracy,1-(N_points+1)/2*accuracy/dlam, 1+(N_points+1)/2*accuracy/dlam],
-                                extent=[1-(N_grid+1)/2*accuracy/dlam, 1+(N_grid+1)/2*accuracy/dlam,
-                                        -(N_grid+1)/2*accuracy, (N_grid+1)/2*accuracy],
+                                cross_corr[:, :, opt_idx[2]].T,
+                                extent=[-(N_grid+1)/2*accuracy, (N_grid+1)/2*accuracy,
+                                        1-(N_grid+1)/2*accuracy/dlam, 1+(N_grid+1)/2*accuracy/dlam],
                                 origin="lower",
                                 aspect="auto",
                                 interpolation='none'
                             )
                             #plt.colorbar()
                             print(opt_p, opt_idx)
-                            plt.axhline(opt_p[0], ls="--", color="white")
-                            plt.axvline(opt_p[1], ls="--", color="white")
+                            plt.axhline(opt_p[1], ls="--", color="white")
+                            plt.axvline(opt_p[0], ls="--", color="white")
 
 
             # Save the correlation plots
@@ -5843,6 +5840,7 @@ class Pipeline:
 
             with fits.open(fits_item) as hdu_list:
                 spec = np.array(hdu_list[1].data)
+                spec[np.isnan(spec)] = 0
                 err = np.array(hdu_list[2].data)
                 wave = np.array(hdu_list[3].data)
 
@@ -5859,7 +5857,7 @@ class Pipeline:
                 for order_idx in range(spec.shape[1]):
                     spec_select = spec[det_idx, order_idx, :, :]
                     tot_spec = np.nansum(spec_select, axis=-1)
-                    y_data = np.median(spec_select, axis=1)
+                    y_data = np.nanmedian(spec_select, axis=1)
 
                     if y_data.shape[0] % 2 == 0:
                         x_data = np.linspace(
