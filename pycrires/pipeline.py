@@ -5214,6 +5214,7 @@ class Pipeline:
             for det_idx in range(spec.shape[0]):
                 for order_idx in range(spec.shape[1]):
                     spec_select = spec[det_idx, order_idx, :, :]
+                    tot_spec = np.nansum(spec_select, axis=-1)
                     y_data = np.median(spec_select, axis=1)
 
                     if y_data.shape[0] % 2 == 0:
@@ -5230,6 +5231,7 @@ class Pipeline:
                             y_data.shape[0],
                         )
 
+                    peak_I = x_data[np.argmax(tot_spec)]
                     # if np.count_nonzero(y_data) == 0:
                     #     spec_shift[det_idx, order_idx, :, :] = \
                     #         np.full(y_data.shape[0], np.nan)
@@ -5237,7 +5239,7 @@ class Pipeline:
                     #     continue
 
                     try:
-                        guess = (np.amax(y_data), 0.0, 1.0)
+                        guess = (np.amax(y_data), peak_I, 1.0)
                         nans = np.isnan(y_data)
                         y_data[nans] = 0
                         result = optimize.curve_fit(
