@@ -21,6 +21,7 @@ import pandas as pd
 import skycalc_ipy
 
 from astropy import time
+import time as tme
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -5291,6 +5292,17 @@ class Pipeline:
                     # Make symmetric sampling around star position
                     y0s = np.linspace(cent_idx - dy / 2, cent_idx + dy / 2, n_points)
 
+                    # Get polynomial coefficients for slit tilt
+                    tilt_p0 = trace_data['SlitPolyA'][order_idx, 0] + \
+                              trace_data['SlitPolyA'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyA'][order_idx, 2] * xs**2
+                    tilt_p1 = trace_data['SlitPolyB'][order_idx, 0] +  \
+                              trace_data['SlitPolyB'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyB'][order_idx, 2] * xs**2
+                    tilt_p2 = trace_data['SlitPolyC'][order_idx, 0] + \
+                              trace_data['SlitPolyC'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyC'][order_idx, 2] * xs**2
+
                     # Loop over spatial positions to extract
                     for pos_idx, y0 in enumerate(y0s):
                         print_msg = (
@@ -5345,6 +5357,11 @@ class Pipeline:
                             )(y)
                             for (x, y) in zip(xs, ys)
                         ]
+
+                        # Correct for the slit tilt
+                        new_xs = tilt_p0 + tilt_p1 * y0 + tilt_p2 * y0**2
+                        new_spec = interpolate.interp1d(xs, new_spec, fill_value=np.nan,
+                                            bounds_error=False)(new_xs)
 
                         # Calculate the wavelength solution from the EsoRex data
                         new_waves = (
