@@ -593,7 +593,7 @@ class Pipeline:
 
                 config_text = config_text.replace(
                     "PIX_SCALE_VALUE=0.086",
-                    "PIX_SCALE_VALUE=0.059",
+                    "PIX_SCALE_VALUE=0.056",
                 )
 
                 config_text = config_text.replace(
@@ -4842,7 +4842,7 @@ class Pipeline:
         self,
         nod_ab: str = "A",
         verbose: bool = True,
-        extraction_length: float = 0.059,
+        extraction_length: float = 0.056,
         spatial_oversampling: float = 1.0,
         use_corr_wavel: bool = True,
     ) -> None:
@@ -4864,7 +4864,7 @@ class Pipeline:
             Print output produced by ``esorex``.
         extraction_length : float
             Spatial extent (arcsec) over which to extract the spectrum.
-            The default value of 0.059 arcsec is the pixel scale of the
+            The default value of 0.056 arcsec is the pixel scale of the
             CRIRES detectors.
         spatial_oversampling : float
             Oversampling factor for the extraction along the slit
@@ -5069,7 +5069,7 @@ class Pipeline:
     def custom_extract_2d(
         self,
         nod_ab: str = "A",
-        spatial_sampling: float = 0.059,
+        spatial_sampling: float = 0.056,
         max_separation: float = 2.0,
     ) -> None:
         """
@@ -5088,7 +5088,7 @@ class Pipeline:
             solution will be corrected.
         spatial_sampling : float
             Spatial interval (arcsec) over which to extract the spectrum.
-            The default value of 0.059 arcsec is the pixel scale of the
+            The default value of 0.056 arcsec is the pixel scale of the
             CRIRES detectors.
         max_separation : float
             Spatial extent (arcsec) over which to extract the spectrum.
