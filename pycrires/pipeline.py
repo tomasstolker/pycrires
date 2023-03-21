@@ -3366,7 +3366,7 @@ class Pipeline:
         verbose: bool = True,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
-        continue_reduction: bool = False
+        check_existing: bool = False
     ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
@@ -3861,10 +3861,10 @@ class Pipeline:
 
                 count_exp += 1
 
-        # Write updated dictionary to JSON file
+            # Write updated dictionary to JSON file
 
-        with open(self.json_file, "w", encoding="utf-8") as json_file:
-            json.dump(self.file_dict, json_file, indent=4)
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
@@ -4294,65 +4294,84 @@ class Pipeline:
         spec: np.ndarray,
         wavel: np.ndarray,
         telluric_template: np.ndarray,
-        accuracy: float = 0.01,
-        window_length: int = 201,
+        accuracy: float = 0.002,
+        N_grid : int = 51,
+        window_length : int = 201,
+        return_cross_corr: bool = False
     ) -> tuple([np.ndarray, float, float]):
 
         template_interp = interpolate.interp1d(
-            telluric_template[:, 0],
-            telluric_template[:, 1],
-            kind="linear",
-            bounds_error=True,
+            telluric_template[:, 0], telluric_template[:, 1],
+            kind="linear", bounds_error=True
         )
 
         # Remove continuum and nans of spectra.
         # The continuum is estimated by smoothing the
         # spectrum with a 2nd order Savitzky-Golay filter
-        nans = np.isnan(spec)
+        spec = spec[10:-10]
+        wavel = wavel[10:-10]
+        nans = np.isnan(spec) + (spec<0.)
+        window_length = min([window_length, 2*(np.sum(~nans)//2)-1])
         continuum = signal.savgol_filter(
-            spec[~nans], window_length=window_length, polyorder=2, mode="interp"
-        )
-
-        # Add 1 to continuum for bins where there is no flux
-        spec_flat = spec[~nans] / (continuum + 1) - 1.0
+            spec[~nans], window_length=window_length,
+            polyorder=2, mode='interp')
+        
+        spec_flat = spec[~nans]-continuum
 
         # Don't use the edges as that sometimes gives problems
-        spec_flat = spec_flat[20:-20]
-        used_wavel = wavel[~nans][20:-20]
+        spec_flat = spec_flat[10:-10]
+        used_wavel = wavel[~nans][10:-10]
 
         # Prepare cross-correlation grid
-        dlam = (wavel[-1] - np.mean(wavel)) / 2
-        da = accuracy / dlam
-        N_a = int(np.ceil(0.1 / da) // 2 * 2 + 1)
-        N_b = int(np.ceil(0.6 / accuracy) // 2 * 2 + 1)
+        dlam = (wavel[-1]-np.mean(wavel))
+        da = accuracy/dlam
+        db = accuracy
+        dc = accuracy/dlam**2
+        N_a, N_b, N_c = N_grid, N_grid, N_grid
 
-        a_grid = np.linspace(0.95, 1.05, N_a)[:, np.newaxis, np.newaxis]
-        b_grid = np.linspace(-0.3, 0.3, N_b)[np.newaxis, :, np.newaxis]
+        b_grid = np.linspace(
+            -db*N_b/2, db*N_b/2, N_b)[:, np.newaxis, np.newaxis, np.newaxis]
+        a_grid = np.linspace(
+            1-da*N_a/2, 1+da*N_a/2, N_a)[np.newaxis, :, np.newaxis, np.newaxis]
+        c_grid = np.linspace(
+                -dc*N_c/2, dc*N_c/2, N_c)[np.newaxis, np.newaxis, :, np.newaxis]
+
         mean_wavel = np.mean(wavel)
-        wl_matrix = (
-            a_grid * (used_wavel[np.newaxis, np.newaxis, :] - mean_wavel)
-            + mean_wavel
-            + b_grid
-        )
-        template = template_interp(wl_matrix) - 1.0
+        wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis,np.newaxis, :]
+                            - mean_wavel) + mean_wavel + b_grid + \
+                    c_grid * (used_wavel[np.newaxis, np.newaxis, np.newaxis, :] - mean_wavel)**2
+        print(wl_matrix.shape)
+        print('Interpolating telluric template...')
+        template = template_interp(wl_matrix) - 1.
 
         # Calculate the cross-correlation
         # between data and template
+        print('Calculating cross-correlation...')
+
         cross_corr = template.dot(spec_flat)
 
         # Find optimal wavelength solution
-        opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
-        opt_a = a_grid[opt_idx[0], 0, 0]
-        opt_b = b_grid[0, opt_idx[1], 0]
-        return cross_corr, opt_a, opt_b
+        opt_idx = np.unravel_index(
+            np.argmax(cross_corr), cross_corr.shape)
+        opt_b = b_grid[opt_idx[0], 0, 0, 0]
+        opt_a = a_grid[0, opt_idx[1], 0, 0]
+        opt_c = c_grid[0, 0, opt_idx[2], 0]
+        if return_cross_corr:
+            return  cross_corr, (opt_b, opt_a, opt_c), opt_idx
+        else:
+            return (opt_b, opt_a, opt_c), opt_idx
+
 
     @typechecked
     def correct_wavelengths(
         self,
         nod_ab: str = "A",
-        accuracy: float = 0.01,
+        input_folder = 'obs_nodding',
+        accuracy: float = 0.002,
+        N_grid: int = 51,
         window_length: int = 201,
         minimum_strength: float = 0.005,
+        sum_over_time: bool = False,
         create_plots: bool = False,
     ) -> None:
         """
@@ -4410,18 +4429,31 @@ class Pipeline:
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-
-        # transm_interp = interpolate.interp1d(
-        #     transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        # )
+        transm_interp = interpolate.interp1d(
+            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        )
 
         print(" [DONE]")
 
         # Read extracted spectra
+        if input_folder == "obs_nodding":
+            fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
+            import glob
+            input_files = str(self.product_folder) + f"/obs_nodding/cr2res_obs_nodding_extracted{nod_ab}_*.fits"
+            fits_files = glob.glob(input_files)
 
-        fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
+        elif input_folder == "util_extract_science":
+            fits_files = list(self.file_dict[f"UTIL_EXTRACT_SCIENCE_{nod_ab}"].keys())
+        
 
-        for fits_file in fits_files:
+        # Hacky way to only do the wavelength solution once
+        # when sum_over_time = True
+        if sum_over_time:
+            N_files = 1
+        else:
+            N_files = len(fits_files)+1
+
+        for fits_file in fits_files[:N_files]:
 
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
@@ -4430,8 +4462,11 @@ class Pipeline:
             print(" [DONE]")
 
             if create_plots:
+                data = hdu_list[f"CHIP1.INT1"].data
+                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+                N_orders = len(spec_orders)
                 fig, axes = plt.subplots(
-                    7, 3, figsize=(9, 15), sharex=True, sharey=True
+                    N_orders, 3, figsize=(9, 15), sharex=True, sharey=True
                 )
 
             for i_det in range(3):
@@ -4447,8 +4482,6 @@ class Pipeline:
                 for order, spec_name in enumerate(spec_orders):
                     # Extract WL, SPEC, and ERR for given order/detector
                     wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
-                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
-                    # err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
                     # Check if there are enough telluric
                     # features in this wavelength range
@@ -4457,19 +4490,52 @@ class Pipeline:
                     )
                     template_std = np.std(transm_spec[wl_mask, 1])
                     if template_std > minimum_strength:
-                        # Calculate the cross-correlation
-                        # between data and template
-                        cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
-                            spec, wavel, transm_spec, accuracy, window_length
-                        )
+                    
+                        if sum_over_time:
+                            tot_flux = 0
+                            #Sum flux from all exposures
+                            for fits_file in fits_files:
+                                hdu_list2 = fits.open(fits_file)
+                                new_flux = hdu_list2[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+                                new_flux[np.isnan(new_flux)] = 0
+                                tot_flux += new_flux
 
+                            # Do cross-correlation on summed flux
+                            cross_corr, (opt_b, opt_a, opt_c), opt_idx = self.xcor_wavelength_solution(
+                                tot_flux, wavel, transm_spec, accuracy, N_grid,
+                                window_length, return_cross_corr=True)
+                            
+                            # Save corrected wavelengths to all files for this order
+                            for save_file in fits_files:
+                                out_file = output_dir / (pathlib.Path(save_file).stem + "_corr.fits")
+                                if i_det==0 and order==0:
+                                    save_hdu_list = fits.open(save_file)
+                                else:
+                                    save_hdu_list = fits.open(out_file)
+                                mean_wavel = np.mean(wavel)
+                                save_hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                                opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + \
+                                opt_c * (wavel - mean_wavel)**2
+                                )
+
+                                save_hdu_list.writeto(out_file, overwrite=True)
+
+                        else:
+                            spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+
+                            # Calculate the cross-correlation
+                            # between data and template
+                            cross_corr, (opt_b, opt_a, opt_c), opt_idx = self.xcor_wavelength_solution(
+                                spec, wavel, transm_spec, accuracy, window_length, return_cross_corr=True
+                            )
                         # Plot correlation map
                         if create_plots:
                             plt.sca(axes[order, i_det])
                             plt.title(f"Detector {i_det+1}, order {order}")
+                            dlam = (wavel[-1]-np.mean(wavel))
                             plt.imshow(
-                                cross_corr,
-                                extent=[-0.5, 0.5, 0.9, 1.1],
+                                cross_corr[:,:, opt_idx[2]].T,
+                                extent=[-N_grid/2*accuracy, N_grid/2*accuracy,1-N_grid/2*accuracy/dlam, 1+N_grid/2*accuracy/dlam],
                                 origin="lower",
                                 aspect="auto",
                             )
@@ -4490,22 +4556,22 @@ class Pipeline:
                             plt.sca(axes[order, i_det])
                             plt.axis("off")
 
+                    print(opt_b, opt_a, opt_c)
                     print(
                         f"   - {spec_name} -> lambda = {opt_b:.4f} "
-                        f"+ {opt_a:.4f} * lambda'"
-                    )
-
-                    mean_wavel = np.mean(wavel)
-                    hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                        opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                        f"+ {opt_a:.4f} * lambda + {opt_c:.4f} * lambda^2'"
                     )
 
             # Write the corrected spectra to a new FITS file
+            if not sum_over_time:
+                out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
+                print(f"\nStoring corrected spectra: {out_file}")
 
-            out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
-            print(f"\nStoring corrected spectra: {out_file}")
-
-            hdu_list.writeto(out_file, overwrite=True)
+                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + \
+                    opt_c * (wavel - mean_wavel)**2
+                    )
+                hdu_list.writeto(out_file, overwrite=True)
 
             # Save the correlation plots
             if create_plots:
@@ -4521,19 +4587,22 @@ class Pipeline:
     def correct_wavelengths_2d(
         self,
         nod_ab: str = "A",
-        accuracy: float = 0.01,
+        accuracy: float = 0.002,
         window_length: int = 201,
+        N_grid: int = 51,
         minimum_strength: float = 0.005,
         sum_over_spatial_dim: bool = True,
-        input_folder="fit_gaussian",
+        sum_over_time: bool = True,
+        input_folder = 'fit_gaussian',
+        create_plots: bool = True
     ) -> None:
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
-        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This
-        function can be applied to 2D extracted spectra, when one
-        wants to keep the spatial information.
+        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This function
+        can be applied to 2D extracted spectra, when one wants to keep
+        the spatial information.
 
         Parameters
         ----------
@@ -4561,10 +4630,13 @@ class Pipeline:
         sum_over_spatial_dim: bool
             If True, the wavelength correction will be calculated
             using the summed spectra over the spatial direction,
-            improving the S/N of the spectra. However, this may
+            improving the S/N of the spectra. However, this may 
             result in slight errors in the wavelength solution
             off-axis.
-
+        sum_over_time: bool
+            If True, the wavelength correction will be calculated
+            using the summed spectra over all exposures,
+            improving the S/N of the spectra.
         Returns
         -------
         NoneType
@@ -4575,10 +4647,10 @@ class Pipeline:
 
         # Create output folder
 
-        # output_dir = self.product_folder / "correct_wavelengths_2d"
-        #
-        # if not os.path.exists(output_dir):
-        #     os.makedirs(output_dir)
+        output_dir = self.product_folder / "correct_wavelengths_2d"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         print("Model file: run_skycalc/transm_spec.dat")
 
@@ -4591,102 +4663,179 @@ class Pipeline:
         print(" [DONE]")
 
         # Read extracted spectra
+        if input_folder=='custom_extract_2d':
+            fits_files = list(self.file_dict[f'CUSTOM_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='util_extract_2d':
+            fits_files = list(self.file_dict[f'UTIL_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='fit_gaussian':
+            fits_files = list(self.file_dict[f'FIT_GAUSSIAN_2D_{nod_ab}'].keys())
+        elif input_folder=='correct_wavelengths_2d':
+            fits_files = list(self.file_dict[f'CORRECT_WAVELENGTHS_2D_{nod_ab}'].keys())
+        import glob
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+            
+        if sum_over_time:
+            tot_flux = 0
+            normalization = 0
+            for fits_file in fits_files:
+                hdu_list = fits.open(fits_file)
+                tot_flux += hdu_list['SPEC'].data/(hdu_list['ERR'].data + 1)**2
+                normalization += 1/(hdu_list['ERR'].data + 1)**2
+            tot_flux = tot_flux/normalization
+            loop_files = fits_files[:1]
+        else:
+            loop_files = fits_files
 
-        if input_folder == "custom_extract_2d":
-            fits_files = list(self.file_dict[f"CUSTOM_EXTRACT_2D_{nod_ab}"].keys())
+        for file_i, fits_file in enumerate(loop_files):
 
-        elif input_folder == "util_extract_2d":
-            fits_files = list(self.file_dict[f"UTIL_EXTRACT_2D_{nod_ab}"].keys())
-
-        elif input_folder == "fit_gaussian":
-            fits_files = list(self.file_dict[f"FIT_GAUSSIAN_2D_{nod_ab}"].keys())
-
-        for fits_file in fits_files:
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
-            corrected_wavel = hdu_list["WAVE"].data
+            corrected_wavel = hdu_list['WAVE'].data[:,:,:,:]
 
             print(" [DONE]")
+            
+            if create_plots:
+                N_orders =hdu_list['SPEC'].data.shape[1]
+                fig, axes = plt.subplots(
+                    N_orders, 3, figsize=(9, 15), sharex=False, sharey=False
+                )
+
 
             for det_idx in range(3):
                 # Get detector data
-                print("\nCorrecting wavelength solution " f"of detector {det_idx+1}:")
+                print(f"\nCorrecting wavelength solution of detector {det_idx+1}:")
 
                 # Loop over spectral orders
                 for order_idx in np.arange(7):
                     # Extract WL and SPEC for given order/detector
-                    wavel_2d = hdu_list["WAVE"].data[det_idx, order_idx]
-                    spec_2d = hdu_list["SPEC"].data[det_idx, order_idx]
+                    wavel_2d = hdu_list['WAVE'].data[det_idx, order_idx]
+                    if not sum_over_time:
+                        spec_2d = hdu_list['SPEC'].data[det_idx, order_idx]
+                    else:
+                        spec_2d = tot_flux[det_idx, order_idx]
 
                     # If we sum over the spatial dimension to boost SNR, do so
                     if sum_over_spatial_dim:
-                        wavel_list = [np.nanmean(wavel_2d, axis=0)]
-                        spec_list = [np.nansum(spec_2d, axis=0)]
-
+                        cent_idx = spec_2d.shape[0]//2+1
+                        spec_2d = spec_2d[cent_idx-6:cent_idx+7]
+                        norm_spec = spec_2d/np.nansum(spec_2d, axis=1)[:, np.newaxis]
+                        wavel_list = [np.nanmean(wavel_2d,axis=0)]
+                        #spec_list = [np.nansum(spec_2d[cent_idx-7:cent_idx+8], axis=0)]
+                        spec_list = [np.nanmedian(norm_spec, axis=0)]
                     else:
                         wavel_list = np.copy(wavel_2d)
                         spec_list = np.copy(spec_2d)
 
-                    # Check if there are enough telluric
-                    # features in this wavelength range
-
-                    wl_mask = (transm_spec[:, 0] > np.min(wavel_2d)) * (
-                        transm_spec[:, 0] < np.max(wavel_2d)
-                    )
-
-                    template_std = np.std(transm_spec[wl_mask, 1])
-
-                    if template_std < minimum_strength:
-                        warnings.warn(
-                            "Not enough telluric features to "
-                            f"correct wavelength for detector "
-                            f"{det_idx} and order {order_idx}, "
-                            "using EsoRex wavelength solution"
-                        )
-
-                        corrected_wavel[det_idx, order_idx, :] = wavel_2d
+                    # Check if there are enough telluric features in this
+                    # wavelength range
+                    wl_mask = (transm_spec[:, 0] > np.min(wavel_2d)) * \
+                              (transm_spec[:, 0] < np.max(wavel_2d))
+                    template_std = np.std(transm_spec[wl_mask,1])
+                    if not template_std > minimum_strength:
+                            print("WARNING: Not enough telluric features to correct wavelength"
+                                  f" for detector {det_idx} and order {order_idx}, using EsoRex"
+                                  "wavelength solution")
+                            corrected_wavel[det_idx, order_idx, :] = wavel_2d
 
                     else:
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
-                            # Calculate wavelength solution using cross-correlation
 
-                            _, opt_a, opt_b = self.xcor_wavelength_solution(
-                                spec, wavel, transm_spec, accuracy, window_length
-                            )
+                            #Calculate wavelength solution using cross-correlation
+                            cross_corr, opt_p, opt_idx = self.xcor_wavelength_solution(
+                                spec, wavel, transm_spec, accuracy, N_grid, window_length, return_cross_corr=True)
 
                             print(
-                                f"   - Detector {det_idx+1}, "
-                                f"Order {order_idx}, Row {row} "
-                                f"-> lambda = {opt_b:.4f} "
-                                f"+ {opt_a:.4f} * lambda'"
+                                f"   - Detector {det_idx+1}, Order {order_idx}, Row {row} -> lambda = {opt_p[0]:.4f} "
+                                f"+ {opt_p[1]:.4f} * lambda + {opt_p[2]:.4f} * lambda^2'"
                             )
 
                             mean_wavel = np.mean(wavel)
-
+                            dwavel = wavel - mean_wavel
+                            
                             # Save new wavelength solution
+                            if sum_over_time and sum_over_spatial_dim:
+                                # Save corrected wavelengths to all files for this order
+                                for save_file in fits_files:
+                                    out_file = output_dir / (pathlib.Path(save_file).stem.replace("_corr","") + "_corr.fits")
+                                    if det_idx==0 and order_idx==0:
+                                        save_hdu_list = fits.open(save_file)
+                                    else:
+                                        save_hdu_list = fits.open(out_file)
 
-                            if sum_over_spatial_dim:
+                                    mean_wavel = np.mean(wavel)
+                                    save_hdu_list["WAVE"].data[det_idx, order_idx, :] = (
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) + \
+                                        opt_p[2] * (wavel - mean_wavel)**2
+                                    )
+                                    save_hdu_list.writeto(out_file, overwrite=True)
+                                    self._update_files(f"CORRECT_WAVELENGTHS_2D_{nod_ab}", str(out_file))
+
+                            elif sum_over_time:
+                                # Save corrected wavelengths to all files for this order
+                                for save_file in fits_files:
+                                    out_file = output_dir / (pathlib.Path(save_file).stem + "_corr.fits")
+                                    if det_idx==0 and order_idx==0:
+                                        save_hdu_list = fits.open(save_file)
+                                    else:
+                                        save_hdu_list = fits.open(out_file)
+
+                                    mean_wavel = np.mean(wavel)
+                                    save_hdu_list["WAVE"].data[det_idx, order_idx, row] = (
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) + \
+                                        opt_p[2] * (wavel - mean_wavel)**2
+                                    )
+                                    save_hdu_list.writeto(out_file, overwrite=True)
+                                    self._update_files(f"CORRECT_WAVELENGTHS_2D_{nod_ab}", str(out_file))
+
+                            elif sum_over_spatial_dim:
                                 corrected_wavel[det_idx, order_idx, :] = (
-                                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                                    mean_wavel + opt_p[0] + opt_p[1] * dwavel + opt_p[2] * dwavel**2
                                 )
-
                             else:
                                 corrected_wavel[det_idx, order_idx, row] = (
-                                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                                    mean_wavel + opt_p[0] + opt_p[1] * dwavel + opt_p[2] * dwavel**2
                                 )
+                        
+                        if create_plots:
+                            dlam = (wavel[-1]-np.mean(wavel))
+                            plt.sca(axes[order_idx, det_idx])
+                            plt.title(f"Detector {det_idx+1}, order {order_idx}")
+                            plt.imshow(
+                                cross_corr[:, :, opt_idx[2]],
+                                #extent=[-(N_points+1)/2*accuracy, (N_points+1)/2*accuracy,1-(N_points+1)/2*accuracy/dlam, 1+(N_points+1)/2*accuracy/dlam],
+                                extent=[1-(N_grid+1)/2*accuracy/dlam, 1+(N_grid+1)/2*accuracy/dlam,
+                                        -(N_grid+1)/2*accuracy, (N_grid+1)/2*accuracy],
+                                origin="lower",
+                                aspect="auto",
+                                interpolation='none'
+                            )
+                            #plt.colorbar()
+                            print(opt_p, opt_idx)
+                            plt.axhline(opt_p[0], ls="--", color="white")
+                            plt.axvline(opt_p[1], ls="--", color="white")
 
-            # Add corrected wavelengths to a new HDU
-            # called CORR_WAVE in existing FITS files
 
-            if "CORR_WAVE" in hdu_list:
-                hdu_list.pop("CORR_WAVE")
+            # Save the correlation plots
+            if create_plots:
+                fig.add_subplot(111, frame_on=False)
+                plt.tick_params(labelcolor="none", bottom=False, left=False)
+                plt.ylabel("Slope", fontsize=16)
+                plt.xlabel("Offset (nm)", fontsize=16)
+                out_label = fits_file[-17:-5]
+                plt.tight_layout()
+                plt.savefig(f"{output_dir}/correlation_map_{nod_ab}_{accuracy}.png")
 
-            hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name="CORR_WAVE"))
-            hdu_list.writeto(fits_file, overwrite=True)
-
-        with open(self.json_file, "w", encoding="utf-8") as json_file:
-            json.dump(self.file_dict, json_file, indent=4)
+            # Add corrected wavelengths tCORR_WAVE' in o existing fits file
+            if not sum_over_time:
+                if 'CORR_WAVE' in hdu_list:
+                    hdu_list.pop('CORR_WAVE')
+                hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name='CORR_WAVE'))
+                hdu_list.writeto(fits_file, overwrite=True)
+        
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def util_extract_2d(
