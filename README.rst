@@ -31,6 +31,11 @@ Documentation
 
 Documentation can be found at `http://pycrires.readthedocs.io <http://pycrires.readthedocs.io>`_.
 
+Attribution
+-----------
+
+Please cite `Stolker & Landman, 2023, ascl: 3541 <https://ascl.net/code/v/3541>`_ when *pycrires* is used in a publication.
+
 Contributing
 ------------
 
@@ -39,6 +44,6 @@ Contributions are welcome so please consider `forking <https://help.github.com/e
 License
 -------
 
-Copyright 2021-2022 Tomas Stolker & Rico Landman
+Copyright 2021-2023 Tomas Stolker & Rico Landman
 
 *pycrires* is distributed under the MIT License. See `LICENSE <https://github.com/tomasstolker/pycrires/blob/main/LICENSE>`_ for the terms and conditions.
