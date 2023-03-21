@@ -3366,6 +3366,7 @@ class Pipeline:
         verbose: bool = True,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
+        continue_reduction: bool = False
     ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
@@ -3391,6 +3392,9 @@ class Pipeline:
             ``False`` is that it very much decreases the
             computation time since the ``extract_height`` and
             ``extract_oversample`` will be adjusted.
+        check_existing : bool
+            Search for existing files in the product
+            folder. Avoids re-reducing existing files.
 
         Returns
         -------
@@ -3439,6 +3443,7 @@ class Pipeline:
 
         nod_a_count = sum(nod_a_exp)
         nod_b_count = sum(nod_b_exp)
+        b_i_rows = self.header_data.index[nod_b_exp]
 
         print(f"Number of exposures at nod A: {nod_a_count}")
         print(f"Number of exposures at nod B: {nod_b_count}")
@@ -3494,368 +3499,367 @@ class Pipeline:
 
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
-            print(
-                f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:"
-            )
-            sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}.sof")
-
-            sof_open = open(sof_file, "w", encoding="utf-8")
-
-            file_0 = self.header_data["ORIGFILE"][i_row]
-
-            if self.header_data["SEQ.NODPOS"][i_row + 1] == "B":
-                # AB pair, so using the next exposure for B
-                file_1 = self.header_data["ORIGFILE"][i_row + 1]
-
-            elif self.header_data["SEQ.NODPOS"][i_row - 1] == "B":
-                # BA pair, so using the previous exposure for B
-                file_1 = self.header_data["ORIGFILE"][i_row - 1]
-
+            output_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
+            if check_existing and os.path.exists(output_file):
+                print(f'Already reduced file nod pair #{count_exp+1}/{indices.sum()//2}')
             else:
-                warnings.warn(
-                    f"Can not find nod B data to use in "
-                    f"combination with the nod A data of "
-                    f"{file_0} so will skip this file."
+                print(
+                    f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:"
                 )
+                sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}.sof")
 
-                continue
+                sof_open = open(sof_file, "w", encoding="utf-8")
 
-            if found_calib_nodding:
-                file_path_0 = f"{self.path}/calib/util_calib_nodding/{file_0[:-5]}_calibrated.fits"
-                file_path_1 = f"{self.path}/calib/util_calib_nodding/{file_1[:-5]}_calibrated.fits"
+                file_0 = self.header_data["ORIGFILE"][i_row]
 
-            else:
-                file_path_0 = f"{self.path}/raw/{file_0}"
-                file_path_1 = f"{self.path}/raw/{file_1}"
+                if self.header_data["SEQ.NODPOS"][i_row + 1] == "B":
+                    # AB pair, so using the next exposure for B
+                    file_1 = self.header_data["ORIGFILE"][i_row + 1]
 
-            header_0 = fits.getheader(file_path_0)
-            # header_1 = fits.getheader(file_path_1)
+                elif self.header_data["SEQ.NODPOS"][i_row - 1] == "B":
+                    # BA pair, so using the previous exposure for B
+                    file_1 = self.header_data["ORIGFILE"][i_row - 1]
+                else:
+                    print("Irregular A-B nodding sequence, finding closest B frame")
+                    closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+                    file_1 = self.header_data['ORIGFILE'][closest_i_diffnod]
 
-            if found_calib_nodding:
-                check_key = "ESO PRO TECH"
-            else:
-                check_key = "ESO DPR TECH"
+                if found_calib_nodding:
+                    file_path_0 = f"{self.path}/calib/util_calib_nodding/{file_0[:-5]}_calibrated.fits"
+                    file_path_1 = f"{self.path}/calib/util_calib_nodding/{file_1[:-5]}_calibrated.fits"
 
-            if check_key in header_0:
-                if header_0[check_key] == "SPECTRUM,NODDING,OTHER":
-                    sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
-                    self._update_files("OBS_NODDING_OTHER", file_path_0)
+                else:
+                    file_path_0 = f"{self.path}/raw/{file_0}"
+                    file_path_1 = f"{self.path}/raw/{file_1}"
 
-                    sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
-                    self._update_files("OBS_NODDING_OTHER", file_path_1)
+                header_0 = fits.getheader(file_path_0)
+                # header_1 = fits.getheader(file_path_1)
 
-                elif header_0[check_key] == "SPECTRUM,NODDING,JITTER":
-                    sof_open.write(f"{file_path_0} OBS_NODDING_JITTER\n")
-                    self._update_files("OBS_NODDING_JITTER", file_path_0)
+                if found_calib_nodding:
+                    check_key = "ESO PRO TECH"
+                else:
+                    check_key = "ESO DPR TECH"
 
-                    sof_open.write(f"{file_path_1} OBS_NODDING_JITTER\n")
-                    self._update_files("OBS_NODDING_JITTER", file_path_1)
+                if check_key in header_0:
+                    if header_0[check_key] == "SPECTRUM,NODDING,OTHER":
+                        sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
+                        self._update_files("OBS_NODDING_OTHER", file_path_0)
 
-            else:
-                raise RuntimeError(
-                    f"Could not find {check_key} in the header of {file_path_0}."
-                )
+                        sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
+                        self._update_files("OBS_NODDING_OTHER", file_path_1)
 
-            # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
+                    elif header_0[check_key] == "SPECTRUM,NODDING,JITTER":
+                        sof_open.write(f"{file_path_0} OBS_NODDING_JITTER\n")
+                        self._update_files("OBS_NODDING_JITTER", file_path_0)
 
-            if not found_calib_nodding:
+                        sof_open.write(f"{file_path_1} OBS_NODDING_JITTER\n")
+                        self._update_files("OBS_NODDING_JITTER", file_path_1)
 
-                file_found = False
-
-                if "UTIL_MASTER_FLAT" in self.file_dict:
-                    for key in self.file_dict["UTIL_MASTER_FLAT"]:
-                        if not file_found:
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
-                            )
-                            sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
-                            file_found = True
-
-                if "CAL_FLAT_MASTER" in self.file_dict:
-                    for key in self.file_dict["CAL_FLAT_MASTER"]:
-                        if not file_found:
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
-                            )
-                            sof_open.write(f"{key} CAL_FLAT_MASTER\n")
-                            file_found = True
-
-                if not file_found:
-                    warnings.warn("Could not find a master flat.")
-
-            # Find CAL_DARK_BPM file
-
-            if not found_calib_nodding:
-
-                file_found = False
-
-                if "CAL_DARK_BPM" in self.file_dict:
-                    bpm_file = self.select_bpm(science_wlen, science_dit)
-
-                    if bpm_file is not None:
-                        file_name = bpm_file.split("/")[-2:]
-                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
-                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
-                        file_found = True
-
-                if not file_found:
-                    warnings.warn("Could not find a bap pixel map.")
-
-            # Find UTIL_WAVE_TW file
-
-            file_found = False
-
-            for calib_type in ["fpet", "une"]:
-                if "UTIL_WAVE_TW" in self.file_dict:
-                    for key in self.file_dict["UTIL_WAVE_TW"]:
-                        if (
-                            not file_found
-                            and key.split("/")[-2] == f"util_wave_{calib_type}"
-                        ):
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW"
-                            )
-                            sof_open.write(f"{key} UTIL_WAVE_TW\n")
-                            file_found = True
-
-            # if "CAL_WAVE_TW" in self.file_dict:
-            #     for key in self.file_dict["CAL_WAVE_TW"]:
-            #         if not file_found:
-            #             file_name = key.split("/")[-2:]
-            #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_WAVE_TW")
-            #             sof_open.write(f"{key} CAL_WAVE_TW\n")
-            #             file_found = True
-            #
-            # if "CAL_FLAT_TW" in self.file_dict:
-            #     for key in self.file_dict["CAL_FLAT_TW"]:
-            #         if not file_found:
-            #             file_name = key.split("/")[-2:]
-            #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_TW")
-            #             sof_open.write(f"{key} CAL_FLAT_TW\n")
-            #             file_found = True
-
-            if not file_found:
-                warnings.warn("Could not find file with TraceWave table.")
-
-            # Find CAL_DETLIN_COEFFS file
-
-            file_found = False
-
-            if "CAL_DETLIN_COEFFS" in self.file_dict:
-                for key in self.file_dict["CAL_DETLIN_COEFFS"]:
-                    if not file_found:
-                        file_name = key.split("/")[-2:]
-                        print(
-                            f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_COEFFS"
-                        )
-                        sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
-                        file_found = True
-
-            if not file_found:
-                warnings.warn("Could not find CAL_DETLIN_COEFFS.")
-
-            sof_open.close()
-
-            # Create EsoRex configuration file if not found
-
-            self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
-
-            # Run EsoRex
-
-            print()
-
-            config_file = self.config_folder / "obs_nodding.rc"
-
-            esorex = [
-                "esorex",
-                f"--recipe-config={config_file}",
-                f"--output-dir={output_dir}",
-                "cr2res_obs_nodding"
-            ]
-
-            if not extraction_required:
-                esorex.extend(["--extract_height=1", "--extract_oversample=3"])
-
-                warnings.warn("Setting extract_height=1 and "
-                              "extract_oversample=3 since "
-                              "extraction_required=False to decrease "
-                              "runtime. The extracted spectra from "
-                              "obs_nodding will therefore not be "
-                              "accurate so it is required to either "
-                              "set extraction_required=True if 1D "
-                              "spectra are needed or to use the "
-                              "custom_extract_2d method after running "
-                              "obs_nodding for a 2D extraction of the "
-                              "spectra in order to maintain the "
-                              "spatial dimension.")
-
-            esorex.append(sof_file)
-
-            if verbose:
-                stdout = None
-            else:
-                stdout = subprocess.DEVNULL
-                print("Running EsoRex...", end="", flush=True)
-
-            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
-
-            if not verbose:
-                print(" [DONE]\n")
-
-            if correct_bad_pixels:
-                for nod_pos in ["A", "B"]:
-                    fits_file = (
-                        output_dir / f"cr2res_obs_nodding_combined{nod_pos}.fits"
+                else:
+                    raise RuntimeError(
+                        f"Could not find {check_key} in the header of {file_path_0}."
                     )
 
-                    with fits.open(fits_file) as hdu_list:
-                        # Iterate over 3 detectors
-                        for det_idx in range(3):
-                            # Read image with spectra
-                            # Bad pixels are set to NaN
-                            image = hdu_list[(det_idx * 2) + 1].data
+                # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
 
-                            # Create bad pixel mask
-                            mask = np.zeros(image.shape)
-                            mask[np.isnan(image)] = 1.0
+                if not found_calib_nodding:
 
-                            # Overwrite the image
-                            # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 1
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                    file_found = False
 
-                            bp_fraction = np.sum(np.isnan(image)) / np.size(image)
+                    if "UTIL_MASTER_FLAT" in self.file_dict:
+                        for key in self.file_dict["UTIL_MASTER_FLAT"]:
+                            if not file_found:
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
+                                )
+                                sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
+                                file_found = True
+
+                    if "CAL_FLAT_MASTER" in self.file_dict:
+                        for key in self.file_dict["CAL_FLAT_MASTER"]:
+                            if not file_found:
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
+                                )
+                                sof_open.write(f"{key} CAL_FLAT_MASTER\n")
+                                file_found = True
+
+                    if not file_found:
+                        warnings.warn("Could not find a master flat.")
+
+                # Find CAL_DARK_BPM file
+
+                if not found_calib_nodding:
+
+                    file_found = False
+
+                    if "CAL_DARK_BPM" in self.file_dict:
+                        bpm_file = self.select_bpm(science_wlen, science_dit)
+
+                        if bpm_file is not None:
+                            file_name = bpm_file.split("/")[-2:]
+                            print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                            sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                            file_found = True
+
+                    if not file_found:
+                        warnings.warn("Could not find a bap pixel map.")
+
+                # Find UTIL_WAVE_TW file
+
+                file_found = False
+
+                for calib_type in ["fpet", "une"]:
+                    if "UTIL_WAVE_TW" in self.file_dict:
+                        for key in self.file_dict["UTIL_WAVE_TW"]:
+                            if (
+                                not file_found
+                                and key.split("/")[-2] == f"util_wave_{calib_type}"
+                            ):
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW"
+                                )
+                                sof_open.write(f"{key} UTIL_WAVE_TW\n")
+                                file_found = True
+
+                # if "CAL_WAVE_TW" in self.file_dict:
+                #     for key in self.file_dict["CAL_WAVE_TW"]:
+                #         if not file_found:
+                #             file_name = key.split("/")[-2:]
+                #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_WAVE_TW")
+                #             sof_open.write(f"{key} CAL_WAVE_TW\n")
+                #             file_found = True
+                #
+                # if "CAL_FLAT_TW" in self.file_dict:
+                #     for key in self.file_dict["CAL_FLAT_TW"]:
+                #         if not file_found:
+                #             file_name = key.split("/")[-2:]
+                #             print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_TW")
+                #             sof_open.write(f"{key} CAL_FLAT_TW\n")
+                #             file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find file with TraceWave table.")
+
+                # Find CAL_DETLIN_COEFFS file
+
+                file_found = False
+
+                if "CAL_DETLIN_COEFFS" in self.file_dict:
+                    for key in self.file_dict["CAL_DETLIN_COEFFS"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
                             print(
-                                f"Bad pixels in nod {nod_pos}, "
-                                f"detector {det_idx+1}: "
-                                f"{100.*bp_fraction:.1f}%"
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_COEFFS"
                             )
+                            sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
+                            file_found = True
 
-                            # Read image with uncertainties
-                            # Bad pixels are set to NaN
-                            image = hdu_list[(det_idx * 2) + 2].data
+                if not file_found:
+                    warnings.warn("Could not find CAL_DETLIN_COEFFS.")
 
-                            # Create bad pixel mask
-                            mask = np.zeros(image.shape)
-                            mask[np.isnan(image)] = 1.0
+                sof_open.close()
 
-                            # Overwrite the image
-                            # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 2
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                # Create EsoRex configuration file if not found
 
-                        hdu_list.writeto(fits_file, overwrite=True)
+                self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
+
+                # Run EsoRex
 
                 print()
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
-            )
+                config_file = self.config_folder / "obs_nodding.rc"
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
-            )
+                esorex = [
+                    "esorex",
+                    f"--recipe-config={config_file}",
+                    f"--output-dir={output_dir}",
+                    "cr2res_obs_nodding"
+                ]
 
-            spec_file = pathlib.Path(
-                output_dir / "cr2res_obs_nodding_extracted_combined.fits"
-            )
-            spec_file.rename(
-                output_dir
-                / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
-            )
+                if not extraction_required:
+                    esorex.extend(["--extract_height=1", "--extract_oversample=3"])
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
-            )
+                    warnings.warn("Setting extract_height=1 and "
+                                "extract_oversample=3 since "
+                                "extraction_required=False to decrease "
+                                "runtime. The extracted spectra from "
+                                "obs_nodding will therefore not be "
+                                "accurate so it is required to either "
+                                "set extraction_required=True if 1D "
+                                "spectra are needed or to use the "
+                                "custom_extract_2d method after running "
+                                "obs_nodding for a 2D extraction of the "
+                                "spectra in order to maintain the "
+                                "spatial dimension.")
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
-            )
+                esorex.append(sof_file)
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelA.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
-            )
+                if verbose:
+                    stdout = None
+                else:
+                    stdout = subprocess.DEVNULL
+                    print("Running EsoRex...", end="", flush=True)
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelB.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
-            )
+                subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
-            )
+                if not verbose:
+                    print(" [DONE]\n")
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
-            )
+                if correct_bad_pixels:
+                    for nod_pos in ["A", "B"]:
+                        fits_file = (
+                            output_dir / f"cr2res_obs_nodding_combined{nod_pos}.fits"
+                        )
 
-            spec_file = pathlib.Path(
-                output_dir / "cr2res_obs_nodding_trace_wave_A.fits"
-            )
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits"
-            )
+                        with fits.open(fits_file) as hdu_list:
+                            # Iterate over 3 detectors
+                            for det_idx in range(3):
+                                # Read image with spectra
+                                # Bad pixels are set to NaN
+                                image = hdu_list[(det_idx * 2) + 1].data
 
-            spec_file = pathlib.Path(
-                output_dir / "cr2res_obs_nodding_trace_wave_B.fits"
-            )
-            spec_file.rename(
-                output_dir / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits"
-            )
+                                # Create bad pixel mask
+                                mask = np.zeros(image.shape)
+                                mask[np.isnan(image)] = 1.0
 
-            # Update file dictionary with output files
+                                # Overwrite the image
+                                # Bad pixels are corrected by inpainting
+                                hdu_list[
+                                    (det_idx * 2) + 1
+                                ].data = inpaint.inpaint_biharmonic(image, mask)
 
-            print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
+                                bp_fraction = np.sum(np.isnan(image)) / np.size(image)
+                                print(
+                                    f"Bad pixels in nod {nod_pos}, "
+                                    f"detector {det_idx+1}: "
+                                    f"{100.*bp_fraction:.1f}%"
+                                )
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
+                                # Read image with uncertainties
+                                # Bad pixels are set to NaN
+                                image = hdu_list[(det_idx * 2) + 2].data
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
+                                # Create bad pixel mask
+                                mask = np.zeros(image.shape)
+                                mask[np.isnan(image)] = 1.0
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
+                                # Overwrite the image
+                                # Bad pixels are corrected by inpainting
+                                hdu_list[
+                                    (det_idx * 2) + 2
+                                ].data = inpaint.inpaint_biharmonic(image, mask)
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
+                            hdu_list.writeto(fits_file, overwrite=True)
 
-            fits_file = output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
-            self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
+                    print()
 
-            fits_file = output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
-            self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
+                )
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
+                )
 
-            fits_file = (
-                output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
-            )
-            self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
+                spec_file = pathlib.Path(
+                    output_dir / "cr2res_obs_nodding_extracted_combined.fits"
+                )
+                spec_file.rename(
+                    output_dir
+                    / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
+                )
 
-            count_exp += 1
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelA.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelB.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(
+                    output_dir / "cr2res_obs_nodding_trace_wave_A.fits"
+                )
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(
+                    output_dir / "cr2res_obs_nodding_trace_wave_B.fits"
+                )
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits"
+                )
+
+                # Update file dictionary with output files
+
+                print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_COMBINEDA", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_COMBINEDB", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_EXTRACTA", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_EXTRACTB", str(fits_file))
+
+                fits_file = output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
+                self._update_files("OBS_NODDING_SLITMODELA", str(fits_file))
+
+                fits_file = output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
+                self._update_files("OBS_NODDING_SLITMODELB", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_SLITFUNCA", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
+                )
+                self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
+
+                count_exp += 1
 
         # Write updated dictionary to JSON file
 
