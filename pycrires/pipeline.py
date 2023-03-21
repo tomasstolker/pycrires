@@ -21,7 +21,6 @@ import pandas as pd
 import skycalc_ipy
 
 from astropy import time
-import time as tme
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
