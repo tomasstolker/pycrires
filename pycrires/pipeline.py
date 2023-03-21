@@ -4838,6 +4838,116 @@ class Pipeline:
                 json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
+    def util_extract_science(
+        self,
+        slit_fraction: list,
+        nod_ab: str = "A",
+        verbose: bool = True,
+    ) -> None:
+        """
+        Method for extracting spectra from the products of
+        :func:`~pycrires.pipeline.Pipeline.obs_nodding` for specific
+        slit fractions. This can for example be used when there are multiple
+        objects in the field of view. It is important
+        to run :func:`~pycrires.pipeline.Pipeline.obs_nodding` before
+        :func:`~pycrires.pipeline.Pipeline.util_extract_science`. 
+
+        Parameters
+        ----------
+        slit_fraction: list
+            Spatial extent (in slit fraction) over which to extract the spectrum.
+            These values should be between 0 and 1.
+        nod_ab : str
+            Nod position with the spectra of which the wavelength
+            solution will be corrected.
+        verbose : bool
+            Print output produced by ``esorex``.
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract")
+
+        # Create output folder
+
+        output_dir = self.product_folder / "util_extract_science"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("cr2res_util_extract", "util_extract_science", verbose)
+
+        # List with FITS files that will be processed
+
+        fits_files = sorted(
+            list(self.file_dict[f"OBS_NODDING_COMBINED{nod_ab}"].keys())
+        )
+        out_files = []
+
+        # Iterate over exposures
+        for count_exp, fits_file in enumerate(fits_files):
+            if count_exp > 0:
+                print()
+
+            print(
+                f"Creating SOF file for exposure " f"#{count_exp+1}/{len(fits_files)}:"
+            )
+
+            # Prepare SOF file
+            sof_file = pathlib.Path(
+                self.product_folder / "util_extract_science" / f"files_{count_exp:03d}.sof"
+            )
+            with open(sof_file, "w", encoding="utf-8") as sof_open:
+                sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
+                file_name = fits_file.split("/")[-2:]
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} OBS_NODDING_OTHER")
+
+                tw_file = (
+                    self.product_folder
+                    / f"obs_nodding/cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
+                )
+                sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
+                file_name = str(tw_file).split("/")[-2:]
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW\n")
+
+            config_file = self.config_folder / "util_extract_science.rc"
+
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={self.product_folder / 'util_extract_science'}",
+                "cr2res_util_extract",
+                f"--slit_frac={slit_fraction[0]},{slit_fraction[1]}",
+                sof_file,
+            ]
+
+            if verbose:
+                stdout = None
+            else:
+                stdout = subprocess.DEVNULL
+                print("Running EsoRex...", end="", flush=True)
+
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+                
+            fits_out = (
+                self.product_folder
+                / "util_extract_science"
+                / f"cr2res_obs_nodding_combined{nod_ab}_"
+                f"{count_exp:03d}_extr1D.fits"
+            )
+            self._update_files(f"UTIL_EXTRACT_SCIENCE_{nod_ab}", str(fits_out))
+
+            if not verbose:
+                print(" [DONE]\n")
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
     def util_extract_2d(
         self,
         nod_ab: str = "A",
