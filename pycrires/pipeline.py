@@ -29,6 +29,7 @@ from matplotlib import pyplot as plt
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
 from typeguard import typechecked
+import pycrires.util as util
 
 import pycrires
 
@@ -5959,6 +5960,383 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def remove_starlight(
+        self,
+        nod_ab: str = "A",
+        input_folder: str = 'correct_wavelengths_2d',
+        lp_window_length: int = 501,
+        telluric_mask = [0.4, 2.0],
+        svd_broadening_kernel: bool = False
+    ) -> None:
+        """
+        Method for removing stellar contribution from each row
+        along the slit. This is done by calculating a master stellar
+        spectrum and fitting this to the local continuum of each row.
+        Subsequently, we correct for changes in the line spread function
+        along the slit using a Singular Value Decomposition.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the stellar contribution will be 
+            removed. 
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        lp_window_length : int
+            Length (in spectral pixels) of the low-pass filter applied 
+            to the data to fit the local continuum.
+        telluric_mask : list
+            Relative flux fraction to use as a cutoff for masking the
+            deepest tellurics. E.g. 'telluric_mask = [0.4, 2.0] will 
+            result in all spectral bins with less than 40% or more than
+            200% flux w.r.t the continuum to be masked.
+        svd_broadening_kernel: bool
+            If True, the local line spread function is fitted for each
+            row using an SVD. This results in better stellar subtraction
+            but is much slower and can result in self-subtraction of the
+            planet signal.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+    
+        self._print_section("Remove starlight")
+
+        output_dir = self.product_folder / "star_removed"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            print(f'Removing starlight from file {fits_file}')
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            star_subtracted = np.zeros_like(spec)
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f'Removing starlight for detector {det_idx} order {order_idx}... ', end='\r')
+                    # Mask deepest tellurics
+                    telluric_masked = util.mask_tellurics(order_spec, order_wl, telluric_mask[0], telluric_mask[1])
+
+                    # Flag outliers
+                    telluric_masked = util.flag_outliers(telluric_masked, sigma=3)
+
+                    # Get stellar master_spectrum
+                    star_idx = np.argmax(np.nansum(telluric_masked,axis=-1))
+                    master_spectrum = np.nanmean(telluric_masked[star_idx-3:star_idx+4],axis=0)
+
+                    # Get modulation for each row
+                    modulation = np.array([util.lowpass_filter(row_spec/master_spectrum, 
+                                    lp_window_length) for row_spec in telluric_masked])
+                    star_model = modulation * master_spectrum
+
+                    # Fit SVD kernel
+                    if svd_broadening_kernel:
+                        fitted_star_model = util.fit_svd_kernel(telluric_masked, order_wl, 
+                                                            star_model, max_shift=50)
+                    else:
+                        fitted_star_model = star_model
+
+                    # Save star subtracted array
+                    star_subtracted[det_idx, order_idx] = telluric_masked - fitted_star_model
+            
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(star_subtracted, name="SPEC"))
+            hdu_list.append(fits.ImageHDU(err, name="ERR"))
+            hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
+
+            fits_file = (
+                f"{self.path}/product/star_removed/spectra_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_file, overwrite=True)
+            out_files.append(fits_file)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"STAR_REMOVED_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+
+    @typechecked
+    def remove_pca(
+        self,
+        nod_ab: str = "A",
+        N_modes: int = 5,
+        input_folder: str = "star_removed",
+        normalize: bool=True,
+        exclude_rows: list = []
+    ):
+        """
+        Method for removing systematics from the data using
+        a Principal Component Analysis.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the PCA components will be 
+            removed. 
+        N_modes : int
+            Number of PCA components to subtract from each spectrum.
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        normalize: bool
+            If true, all rows are normalized before doing the PCA.
+        exclude_rows: list
+            Rows to remove before building the PCA model. This is
+            used to avoid self-subtraction of the planet signal.
+            Not implemented yet!
+        Returns
+        -------
+        NoneType
+            None
+        """
+        self._pri
+        self._print_section("Remove PCA")
+
+        output_dir = self.product_folder / "pca_removed"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            print(f'Removing {N_modes} PCA components from file {fits_file}')
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            pca_subtracted = np.zeros_like(spec)
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f'Removing PCA components for detector {det_idx} order {order_idx}... ', end='\r')
+                    
+                    # Flag outliers
+                    order_spec = util.flag_outliers(order_spec, sigma=3)
+
+                    #Normalize
+                    if normalize:
+                        mean = np.nanmean(order_spec, axis=1)[:, np.newaxis,]
+                        std = np.nanstd(order_spec, axis = 1)[:, np.newaxis]
+                        order_spec = (order_spec - mean)/std
+                        order_err = order_err/std
+                    
+                    # Remove NaNs
+                    nans = np.isnan(order_spec)
+                    order_spec[nans] = 0.
+
+                    # SVD
+                    um,sm,vm = np.linalg.svd(order_spec, full_matrices=False)
+                    s_new = np.copy(sm)
+                    s_new[:N_modes] = 0
+                    residuals = um.dot(np.diag(s_new)).dot(vm)
+
+                    # Put NaNs back
+                    residuals[nans] = np.nan
+
+                    pca_subtracted[det_idx, order_idx] = residuals
+                    err[det_idx, order_idx] = order_err
+            
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(pca_subtracted, name="SPEC"))
+            hdu_list.append(fits.ImageHDU(err, name="ERR"))
+            hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
+
+            fits_out= (
+
+                f"{self.path}/product/pca_removed/spectra_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_out.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_out, overwrite=True)
+            out_files.append(fits_out)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"PCA_REMOVED_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def cross_correlate(
+        self,
+        planet_model: np.ndarray,
+        planet_model_wl: np.ndarray,
+        rv_grid : np.ndarray = np.linspace(-150, 150, 301),
+        nod_ab: str = "A",
+        input_folder = 'pca_removed',
+        hp_window_length = 501,
+        error_weighted = False
+    ):
+        """
+        Method for cross-correlating  each row with a model
+        template.
+
+        Parameters
+        ----------
+        planet_model: np.ndarray
+            Template used for cross-correlation
+        planet_model_wl: np.ndarray
+            Wavelengths corresponding to the template in nm.
+        rv_grid: np.ndarray
+            Radial velocities to calculate the cross-correlation on.
+        nod_ab : str
+            Nod position which will be cross-correlated.
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        hp_window_length : int
+            Length (in spectral pixels) of the high-pass filter applied 
+            to the template before cross-correlating. This should have
+            the same value as 'lp_window_length' in the stellar removal.
+        error_weighted: bool
+            If True, each spectral bin is weighted by the noise in the 
+            cross-correlation.
+        Returns
+        -------
+        NoneType
+            None
+        """
+        self._print_section("Cross-correlation")
+
+        output_dir = self.product_folder / "cross_correlate"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+                    
+        betas = 1-rv_grid/2.997e5
+        total_ccf = 0
+
+        def make_ccf_plot(ccf_array):
+            mask= np.abs(rv_grid)>50
+            norm_ccf = (ccf_array - \
+                        np.nanmedian(ccf_array[:,mask], axis=1)[:, np.newaxis])\
+                        /np.nanstd(ccf_array[:, mask], axis=1)[:, np.newaxis]
+            fig = plt.figure(figsize=(6,4))
+            plt.imshow(norm_ccf, cmap='inferno', aspect='auto',
+                        interpolation='none',
+                       extent=[rv_grid.min(), rv_grid.max(),
+                                -fov, fov], origin='lower')
+            plt.colorbar()
+            plt.ylabel('Separation ["]')
+            plt.xlabel('Radial velocity [km/s]')
+            return fig
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            total_ccf_exp = 0
+            ccfs = np.zeros((spec.shape[0], spec.shape[1], spec.shape[2], rv_grid.size))
+            
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f'Cross-correlating detector {det_idx} order {order_idx}... ', end='\r')
+                    waves = np.nanmedian(order_wl, axis=0)
+
+                    # Interpolate model
+                    shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
+                    template = interpolate.interp1d(planet_model_wl, planet_model)(shifted_waves)
+                    hp_template = np.array([util.highpass_filter(temp, hp_window_length) for temp in template]).T
+                    
+                    # Flag outliers
+                    order_spec = util.flag_outliers(order_spec, sigma=3)
+
+                    # Cross-correlation
+                    order_err[np.isnan(order_err)] = np.inf
+                    order_err[order_err==0] = np.inf
+                    order_spec[np.isnan(order_spec)] = 0
+                    
+                    if error_weighted:
+                        #Clip errors at half their median
+                        order_err = np.maximum(order_err, 0.5*np.nanmedian(order_err))
+                        ccf = (order_spec/order_err**2).dot(hp_template)
+                    else:
+                        ccf = (order_spec).dot(hp_template)
+                    ccfs[det_idx, order_idx] = ccf
+                    total_ccf_exp += ccf
+            total_ccf += total_ccf_exp
+
+            fov = spec.shape[2]*0.056/2   
+            
+            make_ccf_plot(total_ccf_exp)
+            
+            plot_file = (
+                f"{self.path}/product/cross_correlate/ccf_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.png"
+            )
+            plt.savefig(plot_file)
+            plt.close()
+
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(ccfs, name="CCF"))
+            hdu_list.append(fits.ImageHDU(rv_grid, name="RV"))
+
+            fits_file = (
+                f"{self.path}/product/cross_correlate/ccf_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_file, overwrite=True)
+            out_files.append(fits_file)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"CCF_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+            
+        make_ccf_plot(total_ccf)
+        plot_file = (
+            f"{self.path}/product/cross_correlate/total_ccf_"
+            + f"nod_{nod_ab}_{fits_idx:03d}.png"
+        )
+        plt.savefig(plot_file)
+        plt.close()
+
 
     @typechecked
     def plot_spectra(
