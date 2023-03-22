@@ -4882,7 +4882,7 @@ class Pipeline:
                                     save_hdu_list = fits.open(out_file)
                                 mean_wavel = np.mean(wavel)
                                 save_hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                                opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + \
+                                opt_a * (wavel - mean_wavel) + mean_wavel + opt_b +
                                 opt_c * (wavel - mean_wavel)**2
                                 )
 
@@ -4903,7 +4903,8 @@ class Pipeline:
                             dlam = (wavel[-1]-np.mean(wavel))
                             plt.imshow(
                                 cross_corr[:,:, opt_idx[2]].T,
-                                extent=[-N_grid/2*accuracy, N_grid/2*accuracy,1-N_grid/2*accuracy/dlam, 1+N_grid/2*accuracy/dlam],
+                                extent=[-N_grid/2*accuracy, N_grid/2*accuracy,
+                                        1-N_grid/2*accuracy/dlam, 1+N_grid/2*accuracy/dlam],
                                 origin="lower",
                                 aspect="auto",
                             )
@@ -4936,7 +4937,7 @@ class Pipeline:
                 print(f"\nStoring corrected spectra: {out_file}")
 
                 hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + \
+                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + 
                     opt_c * (wavel - mean_wavel)**2
                     )
                 hdu_list.writeto(out_file, overwrite=True)
@@ -5134,7 +5135,7 @@ class Pipeline:
 
                                     mean_wavel = np.mean(wavel)
                                     save_hdu_list["WAVE"].data[det_idx, order_idx, :] = (
-                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) + \
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) +
                                         opt_p[2] * (wavel - mean_wavel)**2
                                     )
                                     save_hdu_list.writeto(out_file, overwrite=True)
@@ -5151,7 +5152,7 @@ class Pipeline:
 
                                     mean_wavel = np.mean(wavel)
                                     save_hdu_list["WAVE"].data[det_idx, order_idx, row] = (
-                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) + \
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) +
                                         opt_p[2] * (wavel - mean_wavel)**2
                                     )
                                     save_hdu_list.writeto(out_file, overwrite=True)
@@ -6027,9 +6028,11 @@ class Pipeline:
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])):
 
-                    print(f'Removing starlight for detector {det_idx} order {order_idx}... ', end='\r')
+                    print(f"Removing starlight for detector {det_idx}"
+                          f"order {order_idx}... ", end='\r')
                     # Mask deepest tellurics
-                    telluric_masked = util.mask_tellurics(order_spec, order_wl, telluric_mask[0], telluric_mask[1])
+                    telluric_masked = util.mask_tellurics(order_spec, order_wl, 
+                                    telluric_mask[0], telluric_mask[1])
 
                     # Flag outliers
                     telluric_masked = util.flag_outliers(telluric_masked, sigma=3)
@@ -6112,7 +6115,6 @@ class Pipeline:
         NoneType
             None
         """
-        self._pri
         self._print_section("Remove PCA")
 
         output_dir = self.product_folder / "pca_removed"
@@ -6135,7 +6137,8 @@ class Pipeline:
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])):
 
-                    print(f'Removing PCA components for detector {det_idx} order {order_idx}... ', end='\r')
+                    print(f"Removing PCA components for detector {det_idx}"
+                          f" order {order_idx}... ", end="\r")
                     
                     # Flag outliers
                     order_spec = util.flag_outliers(order_spec, sigma=3)
@@ -6244,8 +6247,8 @@ class Pipeline:
 
         def make_ccf_plot(ccf_array):
             mask= np.abs(rv_grid)>50
-            norm_ccf = (ccf_array - \
-                        np.nanmedian(ccf_array[:,mask], axis=1)[:, np.newaxis])\
+            norm_ccf = (ccf_array -
+                        np.nanmedian(ccf_array[:, mask], axis=1)[:, np.newaxis])\
                         /np.nanstd(ccf_array[:, mask], axis=1)[:, np.newaxis]
             fig = plt.figure(figsize=(6,4))
             plt.imshow(norm_ccf, cmap='inferno', aspect='auto',
@@ -6269,13 +6272,16 @@ class Pipeline:
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])):
 
-                    print(f'Cross-correlating detector {det_idx} order {order_idx}... ', end='\r')
+                    print(f"Cross-correlating detector {det_idx}"
+                          f"order {order_idx}... ", end="\r")
                     waves = np.nanmedian(order_wl, axis=0)
 
                     # Interpolate model
                     shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
-                    template = interpolate.interp1d(planet_model_wl, planet_model)(shifted_waves)
-                    hp_template = np.array([util.highpass_filter(temp, hp_window_length) for temp in template]).T
+                    template = interpolate.interp1d(planet_model_wl, 
+                                    planet_model)(shifted_waves)
+                    hp_template = np.array([util.highpass_filter(temp, 
+                                    hp_window_length) for temp in template]).T
                     
                     # Flag outliers
                     order_spec = util.flag_outliers(order_spec, sigma=3)
@@ -6287,8 +6293,8 @@ class Pipeline:
                     
                     if error_weighted:
                         #Clip errors at half their median
-                        order_err = np.maximum(order_err, 0.5*np.nanmedian(order_err))
-                        ccf = (order_spec/order_err**2).dot(hp_template)
+                        order_err = np.maximum(order_err, 0.5 * np.nanmedian(order_err))
+                        ccf = (order_spec / order_err**2).dot(hp_template)
                     else:
                         ccf = (order_spec).dot(hp_template)
                     ccfs[det_idx, order_idx] = ccf
