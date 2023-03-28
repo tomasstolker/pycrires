@@ -4959,7 +4959,7 @@ class Pipeline:
         window_length: int = 201,
         N_grid: int = 51,
         minimum_strength: float = 0.005,
-        sum_over_spatial_dim: bool = True,
+        collapse_spatially: bool = True,
         collapse_exposures: bool = True,
         input_folder = 'fit_gaussian',
         create_plots: bool = True
@@ -4995,7 +4995,7 @@ class Pipeline:
             deviation is smaller than ``minimum_strength``), the
             original wavelength solution will be saved (default:
             0.005).
-        sum_over_spatial_dim: bool
+        collapse_spatially: bool
             If True, the wavelength correction will be calculated
             using the summed spectra over the spatial direction,
             improving the S/N of the spectra. However, this may 
@@ -5059,7 +5059,7 @@ class Pipeline:
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
-            corrected_wavel = hdu_list['WAVE'].data[:,:,:,:]
+            corrected_wavel = hdu_list['WAVE'].data
 
             print(" [DONE]")
             
@@ -5084,7 +5084,7 @@ class Pipeline:
                         spec_2d = tot_flux[det_idx, order_idx]
 
                     # If we sum over the spatial dimension to boost SNR, do so
-                    if sum_over_spatial_dim:
+                    if collapse_spatially:
                         cent_idx = spec_2d.shape[0]//2+1
                         spec_2d = spec_2d[cent_idx-6:cent_idx+7]
                         norm_spec = spec_2d/np.nansum(spec_2d, axis=1)[:, np.newaxis]
@@ -5101,10 +5101,10 @@ class Pipeline:
                               (transm_spec[:, 0] < np.max(wavel_2d))
                     template_std = np.std(transm_spec[wl_mask,1])
                     if not template_std > minimum_strength:
-                            print("WARNING: Not enough telluric features to correct wavelength"
+                        warnings.warn("Not enough telluric features to correct wavelength"
                                   f" for detector {det_idx} and order {order_idx}, using EsoRex"
                                   "wavelength solution")
-                            corrected_wavel[det_idx, order_idx, :] = wavel_2d
+                        corrected_wavel[det_idx, order_idx, :] = wavel_2d
 
                     else:
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
@@ -5122,7 +5122,7 @@ class Pipeline:
                             dwavel = wavel - mean_wavel
                             
                             # Save new wavelength solution
-                            if collapse_exposures and sum_over_spatial_dim:
+                            if collapse_exposures and collapse_spatially:
                                 # Save corrected wavelengths to all files for this order
                                 for save_file in fits_files:
                                     out_file = output_dir / (pathlib.Path(save_file).stem.replace("_corr","") + "_corr.fits")
@@ -5156,7 +5156,7 @@ class Pipeline:
                                     save_hdu_list.writeto(out_file, overwrite=True)
                                     self._update_files(f"CORRECT_WAVELENGTHS_2D_{nod_ab}", str(out_file))
 
-                            elif sum_over_spatial_dim:
+                            elif collapse_spatially:
                                 corrected_wavel[det_idx, order_idx, :] = (
                                     mean_wavel + opt_p[0] + opt_p[1] * dwavel + opt_p[2] * dwavel**2
                                 )
