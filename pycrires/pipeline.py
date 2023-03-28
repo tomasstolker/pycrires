@@ -29,6 +29,7 @@ from matplotlib import pyplot as plt
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
 from typeguard import typechecked
+import pycrires.util as util
 
 import pycrires
 
@@ -593,7 +594,7 @@ class Pipeline:
 
                 config_text = config_text.replace(
                     "PIX_SCALE_VALUE=0.086",
-                    "PIX_SCALE_VALUE=0.059",
+                    "PIX_SCALE_VALUE=0.056",
                 )
 
                 config_text = config_text.replace(
@@ -3366,6 +3367,7 @@ class Pipeline:
         verbose: bool = True,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
+        check_existing: bool = False
     ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
@@ -3391,6 +3393,9 @@ class Pipeline:
             ``False`` is that it very much decreases the
             computation time since the ``extract_height`` and
             ``extract_oversample`` will be adjusted.
+        check_existing : bool
+            Search for existing files in the product
+            folder. Avoids re-reducing existing files.
 
         Returns
         -------
@@ -3494,6 +3499,11 @@ class Pipeline:
 
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
+            output_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits")
+            if check_existing and os.path.exists(output_file):
+                print(f'Already reduced file nod pair #{count_exp+1}/{indices.sum()//2}')
+                continue
+
             print(
                 f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:"
             )
@@ -3510,12 +3520,11 @@ class Pipeline:
             elif self.header_data["SEQ.NODPOS"][i_row - 1] == "B":
                 # BA pair, so using the previous exposure for B
                 file_1 = self.header_data["ORIGFILE"][i_row - 1]
-
             else:
                 warnings.warn(
-                    f"Can not find nod B data to use in "
-                    f"combination with the nod A data of "
-                    f"{file_0} so will skip this file."
+                    f"Irregular A-B nodding sequence."
+                    f"Please use 'obs_nodding_irregular'"
+                    f"to reduce the data. Skipping file {file_0}"
                 )
 
                 continue
@@ -3680,17 +3689,17 @@ class Pipeline:
                 esorex.extend(["--extract_height=1", "--extract_oversample=3"])
 
                 warnings.warn("Setting extract_height=1 and "
-                              "extract_oversample=3 since "
-                              "extraction_required=False to decrease "
-                              "runtime. The extracted spectra from "
-                              "obs_nodding will therefore not be "
-                              "accurate so it is required to either "
-                              "set extraction_required=True if 1D "
-                              "spectra are needed or to use the "
-                              "custom_extract_2d method after running "
-                              "obs_nodding for a 2D extraction of the "
-                              "spectra in order to maintain the "
-                              "spatial dimension.")
+                            "extract_oversample=3 since "
+                            "extraction_required=False to decrease "
+                            "runtime. The extracted spectra from "
+                            "obs_nodding will therefore not be "
+                            "accurate so it is required to either "
+                            "set extraction_required=True if 1D "
+                            "spectra are needed or to use the "
+                            "custom_extract_2d method after running "
+                            "obs_nodding for a 2D extraction of the "
+                            "spectra in order to maintain the "
+                            "spatial dimension.")
 
             esorex.append(sof_file)
 
@@ -3856,6 +3865,372 @@ class Pipeline:
             self._update_files("OBS_NODDING_SLITFUNCB", str(fits_file))
 
             count_exp += 1
+
+            # Write updated dictionary to JSON file
+
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def obs_nodding_irregular(
+          self,
+        verbose: bool = True,
+        correct_bad_pixels: bool = True,
+        extraction_required: bool = True,
+        check_existing: bool = False
+    ) -> None:
+        """
+        Method for running ``cr2res_obs_nodding``.
+
+        Parameters
+        ----------
+        verbose : bool
+            Print output produced by ``esorex``.
+        correct_bad_pixels : bool
+            Correct bad pixels with the bad pixel map and
+            ``skimage.restoration.inpaint``. If set to
+            ``False``, the bad pixels will remain as NaN
+            in the output images.
+        extraction_required : bool
+            Set to ``True`` if accuracy of the extracted 1D spectra
+            is important. Set to ``False`` if the extraction will
+            be done separately, e.g. with
+            :func:`~pycrires.pipeline.Pipeline.custom_extract_2d`.
+            In the latter case, the extracted spectra that are
+            part of the output from
+            :func:`~pycrires.pipeline.Pipeline.obs_nodding` should
+            be ignored. The advantage of setting the argument to
+            ``False`` is that it very much decreases the
+            computation time since the ``extract_height`` and
+            ``extract_oversample`` will be adjusted.
+        check_existing : bool
+            Search for existing files in the product
+            folder. Avoids re-reducing existing files.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Process nodding frames", recipe_name="cr2res_obs_nodding")
+
+        indices = self.header_data["DPR.CATG"] == "SCIENCE"
+
+        # Create output folder
+
+        output_dir = self.product_folder / "obs_nodding"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
+
+        # Count nod positions
+
+        nod_a_exp = (self.header_data["SEQ.NODPOS"] == "A") & (
+            self.header_data["DPR.CATG"] == "SCIENCE"
+        )
+
+        nod_b_exp = (self.header_data["SEQ.NODPOS"] == "B") & (
+            self.header_data["DPR.CATG"] == "SCIENCE"
+        )
+
+        nod_a_count = sum(nod_a_exp)
+        nod_b_count = sum(nod_b_exp)
+
+        print(f"Number of exposures at nod A: {nod_a_count}")
+        print(f"Number of exposures at nod B: {nod_b_count}")
+        # Create SOF file
+
+        count_exp_a = 0
+        count_exp_b = 0
+
+        # Iterate over nod A exposures
+        a_i_rows = self.header_data.index[nod_a_exp]
+        b_i_rows = self.header_data.index[nod_b_exp]
+        for i_row in science_idx:
+            nod_ab = self.header_data["SEQ.NODPOS"][i_row]
+            if nod_ab == 'A':
+                count_exp = count_exp_a
+            else:
+                count_exp = count_exp_b
+            output_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits")
+            if check_existing and os.path.exists(output_file):
+                print(f'Already reduced file {output_file}')
+            else:
+                print(
+                    f"\nCreating SOF file for {output_file}:"
+                )
+                sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}_{nod_ab}.sof")
+
+                sof_open = open(sof_file, "w", encoding="utf-8")
+
+                file_0 = self.header_data["ORIGFILE"][i_row]
+                if nod_ab == 'A':
+                    closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+                elif nod_ab == 'B':
+                    closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
+                file_1 = self.header_data['ORIGFILE'][closest_i_diffnod]
+
+                for file in [file_0, file_1]:
+                    file_path = f"{self.path}/raw/{file}"
+                    header = fits.getheader(file_path)
+                    if "ESO DPR TECH" in header:
+                        if header["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
+                            sof_open.write(f"{file_path} OBS_NODDING_OTHER\n")
+                            self._update_files("OBS_NODDING_OTHER", file_path)
+
+                        elif header["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
+                            sof_open.write(f"{file_path} OBS_NODDING_JITTER\n")
+                            self._update_files("OBS_NODDING_JITTER", file_path)
+
+                    else:
+                        raise RuntimeError(
+                            f"Could not find ESO.DPR.TECH in " f"the header of {file_path}."
+                        )
+
+                # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
+
+                file_found = False
+
+                if "UTIL_MASTER_FLAT" in self.file_dict:
+                    for key in self.file_dict["UTIL_MASTER_FLAT"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
+                            print(
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
+                            )
+                            sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
+                            file_found = True
+
+                if "CAL_FLAT_MASTER" in self.file_dict:
+                    for key in self.file_dict["CAL_FLAT_MASTER"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
+                            print(
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
+                            )
+                            sof_open.write(f"{key} CAL_FLAT_MASTER\n")
+                            file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find a master flat.")
+
+                # Find CAL_DARK_BPM file
+
+                file_found = False
+
+                if "CAL_DARK_BPM" in self.file_dict:
+                    bpm_file = self.select_bpm(science_wlen, science_dit)
+
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find a bap pixel map.")
+
+                # Find UTIL_WAVE_TW file
+
+                file_found = False
+                #sof_open.write(f"/users/ricolandman/Research_data/Alex_h3+_crires/raw/L3262_tw.fits UTIL_WAVE_TW\n")
+
+                for calib_type in ["fpet", "une"]:
+                    if "UTIL_WAVE_TW" in self.file_dict:
+                        for key in self.file_dict["UTIL_WAVE_TW"]:
+                            if (
+                                not file_found
+                                and key.split("/")[-2] == f"util_wave_{calib_type}"
+                            ):
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW"
+                                )
+                                sof_open.write(f"{key} UTIL_WAVE_TW\n")
+                                file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find file with TraceWave table.")
+
+                # Find CAL_DETLIN_COEFFS file
+
+                file_found = False
+
+                if "CAL_DETLIN_COEFFS" in self.file_dict:
+                    for key in self.file_dict["CAL_DETLIN_COEFFS"]:
+                        if not file_found:
+                            file_name = key.split("/")[-2:]
+                            print(
+                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_COEFFS"
+                            )
+                            sof_open.write(f"{key} CAL_DETLIN_COEFFS\n")
+                            file_found = True
+
+                if not file_found:
+                    warnings.warn("Could not find CAL_DETLIN_COEFFS.")
+
+                sof_open.close()
+
+                # Create EsoRex configuration file if not found
+
+                self._create_config("cr2res_obs_nodding", "obs_nodding", verbose)
+
+                # Run EsoRex
+
+                print()
+
+                config_file = self.config_folder / "obs_nodding.rc"
+
+                esorex = [
+                    "esorex",
+                    f"--recipe-config={config_file}",
+                    f"--output-dir={output_dir}",
+                    "cr2res_obs_nodding",
+                    sof_file,
+                ]
+                
+                if not extraction_required:
+                    esorex.extend(["--extract_height=1", "--extract_oversample=3"])
+
+                    warnings.warn("Setting extract_height=1 and "
+                                "extract_oversample=3 since "
+                                "extraction_required=False to decrease "
+                                "runtime. The extracted spectra from "
+                                "obs_nodding will therefore not be "
+                                "accurate so it is required to either "
+                                "set extraction_required=True if 1D "
+                                "spectra are needed or to use the "
+                                "custom_extract_2d method after running "
+                                "obs_nodding for a 2D extraction of the "
+                                "spectra in order to maintain the "
+                                "spatial dimension.")
+
+                if verbose:
+                    stdout = None
+                else:
+                    stdout = subprocess.DEVNULL
+                    print("Running EsoRex...", end="", flush=True)
+
+                subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+                if not verbose:
+                    print(" [DONE]\n")
+
+                if correct_bad_pixels:
+                    fits_file = (
+                        output_dir / f"cr2res_obs_nodding_combined{nod_ab}.fits"
+                    )
+
+                    with fits.open(fits_file) as hdu_list:
+                        # Iterate over 3 detectors
+                        for det_idx in range(3):
+                            # Read image with spectra
+                            # Bad pixels are set to NaN
+                            image = hdu_list[(det_idx * 2) + 1].data
+
+                            # Create bad pixel mask
+                            mask = np.zeros(image.shape)
+                            mask[np.isnan(image)] = 1.0
+
+                            # Overwrite the image
+                            # Bad pixels are corrected by inpainting
+                            hdu_list[
+                                (det_idx * 2) + 1
+                            ].data = inpaint.inpaint_biharmonic(image, mask)
+
+                            bp_fraction = np.sum(np.isnan(image)) / np.size(image)
+                            print(
+                                f"Bad pixels in nod {nod_ab}, "
+                                f"detector {det_idx+1}: "
+                                f"{100.*bp_fraction:.1f}%"
+                            )
+
+                            # Read image with uncertainties
+                            # Bad pixels are set to NaN
+                            image = hdu_list[(det_idx * 2) + 2].data
+
+                            # Create bad pixel mask
+                            mask = np.zeros(image.shape)
+                            mask[np.isnan(image)] = 1.0
+
+                            # Overwrite the image
+                            # Bad pixels are corrected by inpainting
+                            hdu_list[
+                                (det_idx * 2) + 2
+                            ].data = inpaint.inpaint_biharmonic(image, mask)
+
+                        hdu_list.writeto(fits_file, overwrite=True)
+
+                    print()
+
+                spec_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_extracted{nod_ab}.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_extracted{nod_ab}_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(
+                    output_dir / "cr2res_obs_nodding_extracted_combined.fits"
+                )
+                spec_file.rename(
+                    output_dir
+                    / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_combined{nod_ab}.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_model{nod_ab}.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_model{nod_ab}_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(output_dir / f"cr2res_obs_nodding_slitfunc{nod_ab}.fits")
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_slitfunc{nod_ab}_{count_exp:03d}.fits"
+                )
+
+                spec_file = pathlib.Path(
+                    output_dir / f"cr2res_obs_nodding_trace_wave_{nod_ab}.fits"
+                )
+                spec_file.rename(
+                    output_dir / f"cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
+                )
+
+                # Update file dictionary with output files
+
+                print(f"Output files for nod pair #{count_exp+1}/{indices.sum()//2}:")
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits"
+                )
+                self._update_files(f"OBS_NODDING_COMBINED{nod_ab}", str(fits_file))
+
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_extracted{nod_ab}_{count_exp:03d}.fits"
+                )
+                self._update_files(f"OBS_NODDING_EXTRACT{nod_ab}", str(fits_file))
+
+
+                fits_file = output_dir / f"cr2res_obs_nodding_model{nod_ab}_{count_exp:03d}.fits"
+                self._update_files(f"OBS_NODDING_SLITMODEL{nod_ab}", str(fits_file))
+
+                fits_file = (
+                    output_dir / f"cr2res_obs_nodding_slitfunc{nod_ab}_{count_exp:03d}.fits"
+                )
+                self._update_files(f"OBS_NODDING_SLITFUNC{nod_ab}", str(fits_file))
+
+            if nod_ab == 'A':
+                count_exp_a += 1
+            else:
+                count_exp_b += 1
 
         # Write updated dictionary to JSON file
 
@@ -4290,65 +4665,82 @@ class Pipeline:
         spec: np.ndarray,
         wavel: np.ndarray,
         telluric_template: np.ndarray,
-        accuracy: float = 0.01,
-        window_length: int = 201,
+        accuracy: float = 0.002,
+        N_grid : int = 51,
+        window_length : int = 201,
+        return_cross_corr: bool = False
     ) -> tuple([np.ndarray, float, float]):
 
         template_interp = interpolate.interp1d(
-            telluric_template[:, 0],
-            telluric_template[:, 1],
-            kind="linear",
-            bounds_error=True,
+            telluric_template[:, 0], telluric_template[:, 1],
+            kind="linear", bounds_error=True
         )
 
         # Remove continuum and nans of spectra.
         # The continuum is estimated by smoothing the
         # spectrum with a 2nd order Savitzky-Golay filter
-        nans = np.isnan(spec)
+        spec = spec[10:-10]
+        wavel = wavel[10:-10]
+        nans = np.isnan(spec) + (spec<0.)
+        window_length = min([window_length, 2*(np.sum(~nans)//2)-1])
         continuum = signal.savgol_filter(
-            spec[~nans], window_length=window_length, polyorder=2, mode="interp"
-        )
-
-        # Add 1 to continuum for bins where there is no flux
-        spec_flat = spec[~nans] / (continuum + 1) - 1.0
+            spec[~nans], window_length=window_length,
+            polyorder=2, mode='interp')
+        
+        spec_flat = spec[~nans]-continuum
 
         # Don't use the edges as that sometimes gives problems
-        spec_flat = spec_flat[20:-20]
-        used_wavel = wavel[~nans][20:-20]
+        spec_flat = spec_flat[10:-10]
+        used_wavel = wavel[~nans][10:-10]
 
         # Prepare cross-correlation grid
-        dlam = (wavel[-1] - np.mean(wavel)) / 2
-        da = accuracy / dlam
-        N_a = int(np.ceil(0.1 / da) // 2 * 2 + 1)
-        N_b = int(np.ceil(0.6 / accuracy) // 2 * 2 + 1)
+        dlam = (wavel[-1]-np.mean(wavel))
+        da = accuracy/dlam
+        db = accuracy
+        dc = accuracy/dlam**2
+        N_a, N_b, N_c = N_grid, N_grid, N_grid
 
-        a_grid = np.linspace(0.95, 1.05, N_a)[:, np.newaxis, np.newaxis]
-        b_grid = np.linspace(-0.3, 0.3, N_b)[np.newaxis, :, np.newaxis]
+        b_grid = np.linspace(
+            -db*N_b/2, db*N_b/2, N_b)[:, np.newaxis, np.newaxis, np.newaxis]
+        a_grid = np.linspace(
+            1-da*N_a/2, 1+da*N_a/2, N_a)[np.newaxis, :, np.newaxis, np.newaxis]
+        c_grid = np.linspace(
+                -dc*N_c/2, dc*N_c/2, N_c)[np.newaxis, np.newaxis, :, np.newaxis]
+
         mean_wavel = np.mean(wavel)
-        wl_matrix = (
-            a_grid * (used_wavel[np.newaxis, np.newaxis, :] - mean_wavel)
-            + mean_wavel
-            + b_grid
-        )
-        template = template_interp(wl_matrix) - 1.0
+        wl_matrix = a_grid * (used_wavel[np.newaxis, np.newaxis,np.newaxis, :]
+                            - mean_wavel) + mean_wavel + b_grid + \
+                    c_grid * (used_wavel[np.newaxis, np.newaxis, np.newaxis, :] - mean_wavel)**2
+        print('Interpolating telluric template...')
+        template = template_interp(wl_matrix) - 1.
 
         # Calculate the cross-correlation
         # between data and template
+        print('Calculating cross-correlation...')
+
         cross_corr = template.dot(spec_flat)
 
         # Find optimal wavelength solution
-        opt_idx = np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
-        opt_a = a_grid[opt_idx[0], 0, 0]
-        opt_b = b_grid[0, opt_idx[1], 0]
-        return cross_corr, opt_a, opt_b
+        opt_idx = np.unravel_index(
+            np.argmax(cross_corr), cross_corr.shape)
+        opt_b = b_grid[opt_idx[0], 0, 0, 0]
+        opt_a = a_grid[0, opt_idx[1], 0, 0]
+        opt_c = c_grid[0, 0, opt_idx[2], 0]
+        if return_cross_corr:
+            return  cross_corr, (opt_b, opt_a, opt_c), opt_idx
+        else:
+            return (opt_b, opt_a, opt_c), opt_idx
 
     @typechecked
     def correct_wavelengths(
         self,
         nod_ab: str = "A",
-        accuracy: float = 0.01,
+        input_folder = 'obs_nodding',
+        accuracy: float = 0.002,
+        N_grid: int = 51,
         window_length: int = 201,
         minimum_strength: float = 0.005,
+        collapse_exposures: bool = True,
         create_plots: bool = False,
     ) -> None:
         """
@@ -4406,18 +4798,30 @@ class Pipeline:
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-
-        # transm_interp = interpolate.interp1d(
-        #     transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        # )
+        transm_interp = interpolate.interp1d(
+            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        )
 
         print(" [DONE]")
 
         # Read extracted spectra
+        if input_folder == "obs_nodding":
+            fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
+            input_files = str(self.product_folder) + f"/obs_nodding/cr2res_obs_nodding_extracted{nod_ab}_*.fits"
+            fits_files = glob.glob(input_files)
 
-        fits_files = list(self.file_dict[f"OBS_NODDING_EXTRACT{nod_ab}"].keys())
+        elif input_folder == "util_extract_science":
+            fits_files = list(self.file_dict[f"UTIL_EXTRACT_SCIENCE_{nod_ab}"].keys())
+        
 
-        for fits_file in fits_files:
+        # Hacky way to only do the wavelength solution once
+        # when collapse_exposures = True
+        if collapse_exposures:
+            N_files = 1
+        else:
+            N_files = len(fits_files)+1
+
+        for fits_file in fits_files[:N_files]:
 
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
@@ -4426,8 +4830,11 @@ class Pipeline:
             print(" [DONE]")
 
             if create_plots:
+                data = hdu_list[f"CHIP1.INT1"].data
+                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+                N_orders = len(spec_orders)
                 fig, axes = plt.subplots(
-                    7, 3, figsize=(9, 15), sharex=True, sharey=True
+                    N_orders, 3, figsize=(9, 15), sharex=True, sharey=True
                 )
 
             for i_det in range(3):
@@ -4443,8 +4850,6 @@ class Pipeline:
                 for order, spec_name in enumerate(spec_orders):
                     # Extract WL, SPEC, and ERR for given order/detector
                     wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"]
-                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
-                    # err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_ERR"]
 
                     # Check if there are enough telluric
                     # features in this wavelength range
@@ -4453,19 +4858,53 @@ class Pipeline:
                     )
                     template_std = np.std(transm_spec[wl_mask, 1])
                     if template_std > minimum_strength:
-                        # Calculate the cross-correlation
-                        # between data and template
-                        cross_corr, opt_a, opt_b = self.xcor_wavelength_solution(
-                            spec, wavel, transm_spec, accuracy, window_length
-                        )
+                    
+                        if collapse_exposures:
+                            tot_flux = 0
+                            #Sum flux from all exposures
+                            for fits_file in fits_files:
+                                hdu_list2 = fits.open(fits_file)
+                                new_flux = hdu_list2[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+                                new_flux[np.isnan(new_flux)] = 0
+                                tot_flux += new_flux
 
+                            # Do cross-correlation on summed flux
+                            cross_corr, (opt_b, opt_a, opt_c), opt_idx = self.xcor_wavelength_solution(
+                                tot_flux, wavel, transm_spec, accuracy, N_grid,
+                                window_length, return_cross_corr=True)
+                            
+                            # Save corrected wavelengths to all files for this order
+                            for save_file in fits_files:
+                                out_file = output_dir / (pathlib.Path(save_file).stem + "_corr.fits")
+                                if i_det==0 and order==0:
+                                    save_hdu_list = fits.open(save_file)
+                                else:
+                                    save_hdu_list = fits.open(out_file)
+                                mean_wavel = np.mean(wavel)
+                                save_hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                                opt_a * (wavel - mean_wavel) + mean_wavel + opt_b +
+                                opt_c * (wavel - mean_wavel)**2
+                                )
+
+                                save_hdu_list.writeto(out_file, overwrite=True)
+
+                        else:
+                            spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_SPEC"]
+
+                            # Calculate the cross-correlation
+                            # between data and template
+                            cross_corr, (opt_b, opt_a, opt_c), opt_idx = self.xcor_wavelength_solution(
+                                spec, wavel, transm_spec, accuracy, window_length, return_cross_corr=True
+                            )
                         # Plot correlation map
                         if create_plots:
                             plt.sca(axes[order, i_det])
                             plt.title(f"Detector {i_det+1}, order {order}")
+                            dlam = (wavel[-1]-np.mean(wavel))
                             plt.imshow(
-                                cross_corr,
-                                extent=[-0.5, 0.5, 0.9, 1.1],
+                                cross_corr[:,:, opt_idx[2]].T,
+                                extent=[-N_grid/2*accuracy, N_grid/2*accuracy,
+                                        1-N_grid/2*accuracy/dlam, 1+N_grid/2*accuracy/dlam],
                                 origin="lower",
                                 aspect="auto",
                             )
@@ -4488,20 +4927,19 @@ class Pipeline:
 
                     print(
                         f"   - {spec_name} -> lambda = {opt_b:.4f} "
-                        f"+ {opt_a:.4f} * lambda'"
-                    )
-
-                    mean_wavel = np.mean(wavel)
-                    hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                        opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                        f"+ {opt_a:.4f} * lambda + {opt_c:.4f} * lambda^2'"
                     )
 
             # Write the corrected spectra to a new FITS file
+            if not collapse_exposures:
+                out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
+                print(f"\nStoring corrected spectra: {out_file}")
 
-            out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
-            print(f"\nStoring corrected spectra: {out_file}")
-
-            hdu_list.writeto(out_file, overwrite=True)
+                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b + 
+                    opt_c * (wavel - mean_wavel)**2
+                    )
+                hdu_list.writeto(out_file, overwrite=True)
 
             # Save the correlation plots
             if create_plots:
@@ -4517,19 +4955,22 @@ class Pipeline:
     def correct_wavelengths_2d(
         self,
         nod_ab: str = "A",
-        accuracy: float = 0.01,
+        accuracy: float = 0.002,
         window_length: int = 201,
+        N_grid: int = 51,
         minimum_strength: float = 0.005,
-        sum_over_spatial_dim: bool = True,
-        input_folder="fit_gaussian",
+        collapse_spatially: bool = True,
+        collapse_exposures: bool = True,
+        input_folder = 'fit_gaussian',
+        create_plots: bool = True
     ) -> None:
         """
         Method for correcting the wavelength solution with a linear
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
-        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This
-        function can be applied to 2D extracted spectra, when one
-        wants to keep the spatial information.
+        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This function
+        can be applied to 2D extracted spectra, when one wants to keep
+        the spatial information.
 
         Parameters
         ----------
@@ -4554,13 +4995,16 @@ class Pipeline:
             deviation is smaller than ``minimum_strength``), the
             original wavelength solution will be saved (default:
             0.005).
-        sum_over_spatial_dim: bool
+        collapse_spatially: bool
             If True, the wavelength correction will be calculated
             using the summed spectra over the spatial direction,
-            improving the S/N of the spectra. However, this may
+            improving the S/N of the spectra. However, this may 
             result in slight errors in the wavelength solution
             off-axis.
-
+        collapse_exposures: bool
+            If True, the wavelength correction will be calculated
+            using the summed spectra over all exposures,
+            improving the S/N of the spectra.
         Returns
         -------
         NoneType
@@ -4571,10 +5015,10 @@ class Pipeline:
 
         # Create output folder
 
-        # output_dir = self.product_folder / "correct_wavelengths_2d"
-        #
-        # if not os.path.exists(output_dir):
-        #     os.makedirs(output_dir)
+        output_dir = self.product_folder / "correct_wavelengths_2d"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         print("Model file: run_skycalc/transm_spec.dat")
 
@@ -4587,99 +5031,283 @@ class Pipeline:
         print(" [DONE]")
 
         # Read extracted spectra
+        if input_folder=='custom_extract_2d':
+            fits_files = list(self.file_dict[f'CUSTOM_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='util_extract_2d':
+            fits_files = list(self.file_dict[f'UTIL_EXTRACT_2D_{nod_ab}'].keys())
+        elif input_folder=='fit_gaussian':
+            fits_files = list(self.file_dict[f'FIT_GAUSSIAN_2D_{nod_ab}'].keys())
+        elif input_folder=='correct_wavelengths_2d':
+            fits_files = list(self.file_dict[f'CORRECT_WAVELENGTHS_2D_{nod_ab}'].keys())
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+            
+        if collapse_exposures:
+            tot_flux = 0
+            normalization = 0
+            for fits_file in fits_files:
+                hdu_list = fits.open(fits_file)
+                tot_flux += hdu_list['SPEC'].data/(hdu_list['ERR'].data + 1)**2
+                normalization += 1/(hdu_list['ERR'].data + 1)**2
+            tot_flux = tot_flux/normalization
+            loop_files = fits_files[:1]
+        else:
+            loop_files = fits_files
 
-        if input_folder == "custom_extract_2d":
-            fits_files = list(self.file_dict[f"CUSTOM_EXTRACT_2D_{nod_ab}"].keys())
+        for file_i, fits_file in enumerate(loop_files):
 
-        elif input_folder == "util_extract_2d":
-            fits_files = list(self.file_dict[f"UTIL_EXTRACT_2D_{nod_ab}"].keys())
-
-        elif input_folder == "fit_gaussian":
-            fits_files = list(self.file_dict[f"FIT_GAUSSIAN_2D_{nod_ab}"].keys())
-
-        for fits_file in fits_files:
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
-            corrected_wavel = hdu_list["WAVE"].data
+            corrected_wavel = hdu_list['WAVE'].data
 
             print(" [DONE]")
+            
+            if create_plots:
+                N_orders =hdu_list['SPEC'].data.shape[1]
+                fig, axes = plt.subplots(
+                    N_orders, 3, figsize=(9, 15), sharex=False, sharey=False
+                )
+
 
             for det_idx in range(3):
                 # Get detector data
-                print("\nCorrecting wavelength solution " f"of detector {det_idx+1}:")
+                print(f"\nCorrecting wavelength solution of detector {det_idx+1}:")
 
                 # Loop over spectral orders
                 for order_idx in np.arange(7):
                     # Extract WL and SPEC for given order/detector
-                    wavel_2d = hdu_list["WAVE"].data[det_idx, order_idx]
-                    spec_2d = hdu_list["SPEC"].data[det_idx, order_idx]
+                    wavel_2d = hdu_list['WAVE'].data[det_idx, order_idx]
+                    if not collapse_exposures:
+                        spec_2d = hdu_list['SPEC'].data[det_idx, order_idx]
+                    else:
+                        spec_2d = tot_flux[det_idx, order_idx]
 
                     # If we sum over the spatial dimension to boost SNR, do so
-                    if sum_over_spatial_dim:
-                        wavel_list = [np.nanmean(wavel_2d, axis=0)]
-                        spec_list = [np.nansum(spec_2d, axis=0)]
-
+                    if collapse_spatially:
+                        cent_idx = spec_2d.shape[0]//2+1
+                        spec_2d = spec_2d[cent_idx-6:cent_idx+7]
+                        norm_spec = spec_2d/np.nansum(spec_2d, axis=1)[:, np.newaxis]
+                        wavel_list = [np.nanmean(wavel_2d,axis=0)]
+                        #spec_list = [np.nansum(spec_2d[cent_idx-7:cent_idx+8], axis=0)]
+                        spec_list = [np.nanmedian(norm_spec, axis=0)]
                     else:
                         wavel_list = np.copy(wavel_2d)
                         spec_list = np.copy(spec_2d)
 
-                    # Check if there are enough telluric
-                    # features in this wavelength range
-
-                    wl_mask = (transm_spec[:, 0] > np.min(wavel_2d)) * (
-                        transm_spec[:, 0] < np.max(wavel_2d)
-                    )
-
-                    template_std = np.std(transm_spec[wl_mask, 1])
-
-                    if template_std < minimum_strength:
-                        warnings.warn(
-                            "Not enough telluric features to "
-                            f"correct wavelength for detector "
-                            f"{det_idx} and order {order_idx}, "
-                            "using EsoRex wavelength solution"
-                        )
-
+                    # Check if there are enough telluric features in this
+                    # wavelength range
+                    wl_mask = (transm_spec[:, 0] > np.min(wavel_2d)) * \
+                              (transm_spec[:, 0] < np.max(wavel_2d))
+                    template_std = np.std(transm_spec[wl_mask,1])
+                    if not template_std > minimum_strength:
+                        warnings.warn("Not enough telluric features to correct wavelength"
+                                  f" for detector {det_idx} and order {order_idx}, using EsoRex"
+                                  "wavelength solution")
                         corrected_wavel[det_idx, order_idx, :] = wavel_2d
 
                     else:
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
-                            # Calculate wavelength solution using cross-correlation
 
-                            _, opt_a, opt_b = self.xcor_wavelength_solution(
-                                spec, wavel, transm_spec, accuracy, window_length
-                            )
+                            #Calculate wavelength solution using cross-correlation
+                            cross_corr, opt_p, opt_idx = self.xcor_wavelength_solution(
+                                spec, wavel, transm_spec, accuracy, N_grid, window_length, return_cross_corr=True)
 
                             print(
-                                f"   - Detector {det_idx+1}, "
-                                f"Order {order_idx}, Row {row} "
-                                f"-> lambda = {opt_b:.4f} "
-                                f"+ {opt_a:.4f} * lambda'"
+                                f"   - Detector {det_idx+1}, Order {order_idx}, Row {row} -> lambda = {opt_p[0]:.4f} "
+                                f"+ {opt_p[1]:.4f} * lambda + {opt_p[2]:.4f} * lambda^2'"
                             )
 
                             mean_wavel = np.mean(wavel)
-
+                            dwavel = wavel - mean_wavel
+                            
                             # Save new wavelength solution
+                            if collapse_exposures and collapse_spatially:
+                                # Save corrected wavelengths to all files for this order
+                                for save_file in fits_files:
+                                    out_file = output_dir / (pathlib.Path(save_file).stem.replace("_corr","") + "_corr.fits")
+                                    if det_idx==0 and order_idx==0:
+                                        save_hdu_list = fits.open(save_file)
+                                    else:
+                                        save_hdu_list = fits.open(out_file)
 
-                            if sum_over_spatial_dim:
+                                    mean_wavel = np.mean(wavel)
+                                    save_hdu_list["WAVE"].data[det_idx, order_idx, :] = (
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) +
+                                        opt_p[2] * (wavel - mean_wavel)**2
+                                    )
+                                    save_hdu_list.writeto(out_file, overwrite=True)
+                                    self._update_files(f"CORRECT_WAVELENGTHS_2D_{nod_ab}", str(out_file))
+
+                            elif collapse_exposures:
+                                # Save corrected wavelengths to all files for this order
+                                for save_file in fits_files:
+                                    out_file = output_dir / (pathlib.Path(save_file).stem + "_corr.fits")
+                                    if det_idx==0 and order_idx==0:
+                                        save_hdu_list = fits.open(save_file)
+                                    else:
+                                        save_hdu_list = fits.open(out_file)
+
+                                    mean_wavel = np.mean(wavel)
+                                    save_hdu_list["WAVE"].data[det_idx, order_idx, row] = (
+                                        mean_wavel + opt_p[0] + opt_p[1] * (wavel - mean_wavel) +
+                                        opt_p[2] * (wavel - mean_wavel)**2
+                                    )
+                                    save_hdu_list.writeto(out_file, overwrite=True)
+                                    self._update_files(f"CORRECT_WAVELENGTHS_2D_{nod_ab}", str(out_file))
+
+                            elif collapse_spatially:
                                 corrected_wavel[det_idx, order_idx, :] = (
-                                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                                    mean_wavel + opt_p[0] + opt_p[1] * dwavel + opt_p[2] * dwavel**2
                                 )
-
                             else:
                                 corrected_wavel[det_idx, order_idx, row] = (
-                                    opt_a * (wavel - mean_wavel) + mean_wavel + opt_b
+                                    mean_wavel + opt_p[0] + opt_p[1] * dwavel + opt_p[2] * dwavel**2
                                 )
+                        
+                        if create_plots:
+                            dlam = (wavel[-1]-np.mean(wavel))
+                            plt.sca(axes[order_idx, det_idx])
+                            plt.title(f"Detector {det_idx+1}, order {order_idx}")
+                            plt.imshow(
+                                cross_corr[:, :, opt_idx[2]].T,
+                                extent=[-(N_grid+1)/2*accuracy, (N_grid+1)/2*accuracy,
+                                        1-(N_grid+1)/2*accuracy/dlam, 1+(N_grid+1)/2*accuracy/dlam],
+                                origin="lower",
+                                aspect="auto",
+                                interpolation='none'
+                            )
+                            #plt.colorbar()
+                            plt.axhline(opt_p[1], ls="--", color="white")
+                            plt.axvline(opt_p[0], ls="--", color="white")
 
-            # Add corrected wavelengths to a new HDU
-            # called CORR_WAVE in existing FITS files
 
-            if "CORR_WAVE" in hdu_list:
-                hdu_list.pop("CORR_WAVE")
+            # Save the correlation plots
+            if create_plots:
+                fig.add_subplot(111, frame_on=False)
+                plt.tick_params(labelcolor="none", bottom=False, left=False)
+                plt.ylabel("Slope", fontsize=16)
+                plt.xlabel("Offset (nm)", fontsize=16)
+                out_label = fits_file[-17:-5]
+                plt.tight_layout()
+                plt.savefig(f"{output_dir}/correlation_map_{out_label}_{accuracy}.png")
 
-            hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name="CORR_WAVE"))
-            hdu_list.writeto(fits_file, overwrite=True)
+            # Add corrected wavelengths tCORR_WAVE' in o existing fits file
+            if not collapse_exposures:
+                if 'CORR_WAVE' in hdu_list:
+                    hdu_list.pop('CORR_WAVE')
+                hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name='CORR_WAVE'))
+                hdu_list.writeto(fits_file, overwrite=True)
+        
+            with open(self.json_file, "w", encoding="utf-8") as json_file:
+                json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def util_extract_science(
+        self,
+        slit_fraction: list,
+        nod_ab: str = "A",
+        verbose: bool = True,
+    ) -> None:
+        """
+        Method for extracting spectra from the products of
+        :func:`~pycrires.pipeline.Pipeline.obs_nodding` for specific
+        slit fractions. This can for example be used when there are multiple
+        objects in the field of view. It is important
+        to run :func:`~pycrires.pipeline.Pipeline.obs_nodding` before
+        :func:`~pycrires.pipeline.Pipeline.util_extract_science`. 
+
+        Parameters
+        ----------
+        slit_fraction: list
+            Spatial extent (in slit fraction) over which to extract the spectrum.
+            These values should be between 0 and 1.
+        nod_ab : str
+            Nod position with the spectra of which the wavelength
+            solution will be corrected.
+        verbose : bool
+            Print output produced by ``esorex``.
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section("Extract 2D spectra", recipe_name="cr2res_util_extract")
+
+        # Create output folder
+
+        output_dir = self.product_folder / "util_extract_science"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("cr2res_util_extract", "util_extract_science", verbose)
+
+        # List with FITS files that will be processed
+
+        fits_files = sorted(
+            list(self.file_dict[f"OBS_NODDING_COMBINED{nod_ab}"].keys())
+        )
+        out_files = []
+
+        # Iterate over exposures
+        for count_exp, fits_file in enumerate(fits_files):
+            if count_exp > 0:
+                print()
+
+            print(
+                f"Creating SOF file for exposure " f"#{count_exp+1}/{len(fits_files)}:"
+            )
+
+            # Prepare SOF file
+            sof_file = pathlib.Path(
+                self.product_folder / "util_extract_science" / f"files_{count_exp:03d}.sof"
+            )
+            with open(sof_file, "w", encoding="utf-8") as sof_open:
+                sof_open.write(f"{fits_file} OBS_NODDING_OTHER\n")
+                file_name = fits_file.split("/")[-2:]
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} OBS_NODDING_OTHER")
+
+                tw_file = (
+                    self.product_folder
+                    / f"obs_nodding/cr2res_obs_nodding_trace_wave_{nod_ab}_{count_exp:03d}.fits"
+                )
+                sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
+                file_name = str(tw_file).split("/")[-2:]
+                print(f"   - product/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW\n")
+
+            config_file = self.config_folder / "util_extract_science.rc"
+
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={self.product_folder / 'util_extract_science'}",
+                "cr2res_util_extract",
+                f"--slit_frac={slit_fraction[0]},{slit_fraction[1]}",
+                sof_file,
+            ]
+
+            if verbose:
+                stdout = None
+            else:
+                stdout = subprocess.DEVNULL
+                print("Running EsoRex...", end="", flush=True)
+
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+                
+            fits_out = (
+                self.product_folder
+                / "util_extract_science"
+                / f"cr2res_obs_nodding_combined{nod_ab}_"
+                f"{count_exp:03d}_extr1D.fits"
+            )
+            self._update_files(f"UTIL_EXTRACT_SCIENCE_{nod_ab}", str(fits_out))
+
+            if not verbose:
+                print(" [DONE]\n")
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
@@ -4689,7 +5317,7 @@ class Pipeline:
         self,
         nod_ab: str = "A",
         verbose: bool = True,
-        extraction_length: float = 0.059,
+        extraction_length: float = 0.056,
         spatial_oversampling: float = 1.0,
         use_corr_wavel: bool = True,
     ) -> None:
@@ -4711,7 +5339,7 @@ class Pipeline:
             Print output produced by ``esorex``.
         extraction_length : float
             Spatial extent (arcsec) over which to extract the spectrum.
-            The default value of 0.059 arcsec is the pixel scale of the
+            The default value of 0.056 arcsec is the pixel scale of the
             CRIRES detectors.
         spatial_oversampling : float
             Oversampling factor for the extraction along the slit
@@ -4916,7 +5544,7 @@ class Pipeline:
     def custom_extract_2d(
         self,
         nod_ab: str = "A",
-        spatial_sampling: float = 0.059,
+        spatial_sampling: float = 0.056,
         max_separation: float = 2.0,
     ) -> None:
         """
@@ -4935,7 +5563,7 @@ class Pipeline:
             solution will be corrected.
         spatial_sampling : float
             Spatial interval (arcsec) over which to extract the spectrum.
-            The default value of 0.059 arcsec is the pixel scale of the
+            The default value of 0.056 arcsec is the pixel scale of the
             CRIRES detectors.
         max_separation : float
             Spatial extent (arcsec) over which to extract the spectrum.
@@ -5028,6 +5656,17 @@ class Pipeline:
                     # Make symmetric sampling around star position
                     y0s = np.linspace(cent_idx - dy / 2, cent_idx + dy / 2, n_points)
 
+                    # Get polynomial coefficients for slit tilt
+                    tilt_p0 = trace_data['SlitPolyA'][order_idx, 0] + \
+                              trace_data['SlitPolyA'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyA'][order_idx, 2] * xs**2
+                    tilt_p1 = trace_data['SlitPolyB'][order_idx, 0] +  \
+                              trace_data['SlitPolyB'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyB'][order_idx, 2] * xs**2
+                    tilt_p2 = trace_data['SlitPolyC'][order_idx, 0] + \
+                              trace_data['SlitPolyC'][order_idx, 1] * xs + \
+                              trace_data['SlitPolyC'][order_idx, 2] * xs**2
+
                     # Loop over spatial positions to extract
                     for pos_idx, y0 in enumerate(y0s):
                         print_msg = (
@@ -5082,6 +5721,11 @@ class Pipeline:
                             )(y)
                             for (x, y) in zip(xs, ys)
                         ]
+
+                        # Correct for the slit tilt
+                        new_xs = tilt_p0 + tilt_p1 * y0 + tilt_p2 * y0**2
+                        new_spec = interpolate.interp1d(xs, new_spec, fill_value=np.nan,
+                                            bounds_error=False)(new_xs)
 
                         # Calculate the wavelength solution from the EsoRex data
                         new_waves = (
@@ -5195,6 +5839,7 @@ class Pipeline:
 
             with fits.open(fits_item) as hdu_list:
                 spec = np.array(hdu_list[1].data)
+                spec[np.isnan(spec)] = 0
                 err = np.array(hdu_list[2].data)
                 wave = np.array(hdu_list[3].data)
 
@@ -5210,7 +5855,8 @@ class Pipeline:
             for det_idx in range(spec.shape[0]):
                 for order_idx in range(spec.shape[1]):
                     spec_select = spec[det_idx, order_idx, :, :]
-                    y_data = np.median(spec_select, axis=1)
+                    tot_spec = np.nansum(spec_select, axis=-1)
+                    y_data = np.nanmedian(spec_select, axis=1)
 
                     if y_data.shape[0] % 2 == 0:
                         x_data = np.linspace(
@@ -5226,6 +5872,7 @@ class Pipeline:
                             y_data.shape[0],
                         )
 
+                    peak_I = x_data[np.argmax(tot_spec)]
                     # if np.count_nonzero(y_data) == 0:
                     #     spec_shift[det_idx, order_idx, :, :] = \
                     #         np.full(y_data.shape[0], np.nan)
@@ -5233,7 +5880,7 @@ class Pipeline:
                     #     continue
 
                     try:
-                        guess = (np.amax(y_data), 0.0, 1.0)
+                        guess = (np.amax(y_data), peak_I, 1.0)
                         nans = np.isnan(y_data)
                         y_data[nans] = 0
                         result = optimize.curve_fit(
@@ -5311,6 +5958,388 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def remove_starlight(
+        self,
+        nod_ab: str = "A",
+        input_folder: str = 'correct_wavelengths_2d',
+        lp_window_length: int = 501,
+        telluric_mask = [0.4, 2.0],
+        svd_broadening_kernel: bool = False
+    ) -> None:
+        """
+        Method for removing stellar contribution from each row
+        along the slit. This is done by calculating a master stellar
+        spectrum and fitting this to the local continuum of each row.
+        Subsequently, we correct for changes in the line spread function
+        along the slit using a Singular Value Decomposition.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the stellar contribution will be 
+            removed. 
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        lp_window_length : int
+            Length (in spectral pixels) of the low-pass filter applied 
+            to the data to fit the local continuum.
+        telluric_mask : list
+            Relative flux fraction to use as a cutoff for masking the
+            deepest tellurics. E.g. 'telluric_mask = [0.4, 2.0] will 
+            result in all spectral bins with less than 40% or more than
+            200% flux w.r.t the continuum to be masked.
+        svd_broadening_kernel: bool
+            If True, the local line spread function is fitted for each
+            row using an SVD. This results in better stellar subtraction
+            but is much slower and can result in self-subtraction of the
+            planet signal.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+    
+        self._print_section("Remove starlight")
+
+        output_dir = self.product_folder / "star_removed"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            print(f'Removing starlight from file {fits_file}')
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            star_subtracted = np.zeros_like(spec)
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f"Removing starlight for detector {det_idx} "
+                          f"order {order_idx}... ", end='\r')
+                    # Mask deepest tellurics
+                    telluric_masked = util.mask_tellurics(order_spec, order_wl, 
+                                    telluric_mask[0], telluric_mask[1])
+
+                    # Flag outliers
+                    telluric_masked = util.flag_outliers(telluric_masked, sigma=3)
+
+                    # Get stellar master_spectrum
+                    star_idx = np.argmax(np.nansum(telluric_masked,axis=-1))
+                    master_spectrum = np.nanmean(telluric_masked[star_idx-3:star_idx+4],axis=0)
+
+                    # Get modulation for each row
+                    modulation = np.array([util.lowpass_filter(row_spec/master_spectrum, 
+                                    lp_window_length) for row_spec in telluric_masked])
+                    star_model = modulation * master_spectrum
+
+                    # Fit SVD kernel
+                    if svd_broadening_kernel:
+                        fitted_star_model = util.fit_svd_kernel(telluric_masked, order_wl, 
+                                                            star_model, max_shift=50)
+                    else:
+                        fitted_star_model = star_model
+
+                    # Save star subtracted array
+                    star_subtracted[det_idx, order_idx] = telluric_masked - fitted_star_model
+            
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(star_subtracted, name="SPEC"))
+            hdu_list.append(fits.ImageHDU(err, name="ERR"))
+            hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
+
+            fits_file = (
+                f"{self.path}/product/star_removed/spectra_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_file, overwrite=True)
+            out_files.append(fits_file)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"STAR_REMOVED_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+
+    @typechecked
+    def remove_systematics(
+        self,
+        nod_ab: str = "A",
+        N_modes: int = 5,
+        input_folder: str = "star_removed",
+        normalize: bool=True,
+        exclude_rows: list = []
+    ):
+        """
+        Method for removing systematics from the data using
+        a Principal Component Analysis.
+
+        Parameters
+        ----------
+        nod_ab : str
+            Nod position of which the PCA components will be 
+            removed. 
+        N_modes : int
+            Number of PCA components to subtract from each spectrum.
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        normalize: bool
+            If true, all rows are normalized before doing the PCA.
+        exclude_rows: list
+            Rows to remove before building the PCA model. This is
+            used to avoid self-subtraction of the planet signal.
+            Not implemented yet!
+        Returns
+        -------
+        NoneType
+            None
+        """
+        self._print_section("Remove PCA")
+
+        output_dir = self.product_folder / "pca_removed"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            print(f'Removing {N_modes} PCA components from file {fits_file}')
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            pca_subtracted = np.zeros_like(spec)
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f"Removing PCA components for detector {det_idx}"
+                          f" order {order_idx}... ", end="\r")
+                    
+                    # Flag outliers
+                    order_spec = util.flag_outliers(order_spec, sigma=3)
+
+                    #Normalize
+                    if normalize:
+                        mean = np.nanmean(order_spec, axis=1)[:, np.newaxis,]
+                        std = np.nanstd(order_spec, axis = 1)[:, np.newaxis]
+                        order_spec = (order_spec - mean)/std
+                        order_err = order_err/std
+                    
+                    # Remove NaNs
+                    nans = np.isnan(order_spec)
+                    order_spec[nans] = 0.
+
+                    # SVD
+                    um,sm,vm = np.linalg.svd(order_spec, full_matrices=False)
+                    s_new = np.copy(sm)
+                    s_new[:N_modes] = 0
+                    residuals = um.dot(np.diag(s_new)).dot(vm)
+
+                    # Put NaNs back
+                    residuals[nans] = np.nan
+
+                    pca_subtracted[det_idx, order_idx] = residuals
+                    err[det_idx, order_idx] = order_err
+            
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(pca_subtracted, name="SPEC"))
+            hdu_list.append(fits.ImageHDU(err, name="ERR"))
+            hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
+
+            fits_out= (
+
+                f"{self.path}/product/pca_removed/spectra_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_out.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_out, overwrite=True)
+            out_files.append(fits_out)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"PCA_REMOVED_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
+    def cross_correlate(
+        self,
+        planet_model: np.ndarray,
+        planet_model_wl: np.ndarray,
+        rv_grid : np.ndarray = np.linspace(-150, 150, 301),
+        nod_ab: str = "A",
+        input_folder = 'pca_removed',
+        hp_window_length = 501,
+        error_weighted = False
+    ):
+        """
+        Method for cross-correlating  each row with a model
+        template.
+
+        Parameters
+        ----------
+        planet_model: np.ndarray
+            Template used for cross-correlation
+        planet_model_wl: np.ndarray
+            Wavelengths corresponding to the template in nm.
+        rv_grid: np.ndarray
+            Radial velocities to calculate the cross-correlation on.
+        nod_ab : str
+            Nod position which will be cross-correlated.
+        input_folder : str
+            Subfolder in the `product` folder that contains the
+            spectra that should be processed.
+        hp_window_length : int
+            Length (in spectral pixels) of the high-pass filter applied 
+            to the template before cross-correlating. This should have
+            the same value as 'lp_window_length' in the stellar removal.
+        error_weighted: bool
+            If True, each spectral bin is weighted by the noise in the 
+            cross-correlation.
+        Returns
+        -------
+        NoneType
+            None
+        """
+        self._print_section("Cross-correlation")
+
+        output_dir = self.product_folder / "cross_correlate"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        path_load = self.product_folder / input_folder / f'*_{nod_ab}_*.fits'
+        fits_files = sorted(glob.glob(str(path_load)))
+        out_files = []
+                    
+        betas = 1-rv_grid/2.997e5
+        total_ccf = 0
+
+        def make_ccf_plot(ccf_array):
+            mask= np.abs(rv_grid)>50
+            norm_ccf = (ccf_array -
+                        np.nanmedian(ccf_array[:, mask], axis=1)[:, np.newaxis])\
+                        /np.nanstd(ccf_array[:, mask], axis=1)[:, np.newaxis]
+            fig = plt.figure(figsize=(6,4))
+            plt.imshow(norm_ccf, cmap='inferno', aspect='auto',
+                        interpolation='none',
+                       extent=[rv_grid.min(), rv_grid.max(),
+                                -fov, fov], origin='lower')
+            plt.colorbar()
+            plt.ylabel('Separation ["]')
+            plt.xlabel('Radial velocity [km/s]')
+            return fig
+
+        for fits_idx, fits_file in enumerate(fits_files):
+            hdu_list = fits.open(fits_file)
+            spec = hdu_list['SPEC'].data
+            wl = hdu_list['WAVE'].data
+            err = hdu_list['ERR'].data
+            total_ccf_exp = 0
+            ccfs = np.zeros((spec.shape[0], spec.shape[1], spec.shape[2], rv_grid.size))
+            
+            for det_idx in np.arange(3):
+                for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                    zip(spec[det_idx], wl[det_idx], err[det_idx])):
+
+                    print(f"Cross-correlating detector {det_idx}"
+                          f"order {order_idx}... ", end="\r")
+                    waves = np.nanmedian(order_wl, axis=0)
+
+                    # Interpolate model
+                    shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
+                    template = interpolate.interp1d(planet_model_wl, 
+                                    planet_model)(shifted_waves)
+                    hp_template = np.array([util.highpass_filter(temp, 
+                                    hp_window_length) for temp in template]).T
+                    
+                    # Flag outliers
+                    order_spec = util.flag_outliers(order_spec, sigma=3)
+
+                    # Cross-correlation
+                    order_err[np.isnan(order_err)] = np.inf
+                    order_err[order_err==0] = np.inf
+                    order_spec[np.isnan(order_spec)] = 0
+                    
+                    if error_weighted:
+                        #Clip errors at half their median
+                        order_err = np.maximum(order_err, 0.5 * np.nanmedian(order_err))
+                        ccf = (order_spec / order_err**2).dot(hp_template)
+                    else:
+                        ccf = (order_spec).dot(hp_template)
+                    ccfs[det_idx, order_idx] = ccf
+                    total_ccf_exp += ccf
+            total_ccf += total_ccf_exp
+
+            fov = spec.shape[2]*0.056/2   
+            
+            make_ccf_plot(total_ccf_exp)
+            
+            plot_file = (
+                f"{self.path}/product/cross_correlate/ccf_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.png"
+            )
+            plt.savefig(plot_file)
+            plt.close()
+
+            hdu_list = fits.HDUList(fits.PrimaryHDU())
+            hdu_list.append(fits.ImageHDU(ccfs, name="CCF"))
+            hdu_list.append(fits.ImageHDU(rv_grid, name="RV"))
+
+            fits_file = (
+                f"{self.path}/product/cross_correlate/ccf_"
+                + f"nod_{nod_ab}_{fits_idx:03d}.fits"
+            )
+
+            file_name = fits_file.split("/")[-2:]
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            hdu_list.writeto(fits_file, overwrite=True)
+            out_files.append(fits_file)
+
+        print("\nOutput files:")
+
+        for item in out_files:
+            self._update_files(f"CCF_{nod_ab}", str(item))
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+            
+        make_ccf_plot(total_ccf)
+        plot_file = (
+            f"{self.path}/product/cross_correlate/total_ccf_"
+            + f"nod_{nod_ab}_{fits_idx:03d}.png"
+        )
+        plt.savefig(plot_file)
+        plt.close()
+
 
     @typechecked
     def plot_spectra(

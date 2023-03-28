@@ -10,3 +10,5 @@ scipy
 skycalc_ipy
 tqdm
 typeguard
+wget
+pyAstronomy
