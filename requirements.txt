@@ -11,7 +11,6 @@ skycalc_ipy
 tqdm
 typeguard
 wget
-ssl
 bz2
 lzma
 pyAstronomy
