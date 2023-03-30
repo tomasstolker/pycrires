@@ -38,6 +38,7 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   import pycrires
 
   pipeline = pycrires.Pipeline('./')
+
   pipeline.rename_files()
   pipeline.extract_header()
   pipeline.cal_dark(verbose=False)
@@ -65,18 +66,35 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
 
 .. code-block:: python
 
-  pipeline.custom_extract_2d(nod_ab='A', spatial_sampling=0.059, max_separation=2.0)
+  pipeline.custom_extract_2d(nod_ab='A', max_separation=2.0)
+
   pipeline.fit_gaussian(nod_ab='A', extraction_input='custom_extract_2d')
-  pipeline.correct_wavelengths_2d(nod_ab='A', accuracy=0.01, window_length=201,
-                                  minimum_strength=0.005, sum_over_spatial_dim=True,
-                                  input_folder='fit_gaussian')
+
+  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='fit_gaussian',
+                                  collapse_spatially=True, collapse_exposures=True, accuracy=0.02)
+
+  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='correct_wavelengths_2d',
+                                  collapse_spatially=True, collapse_exposures=True, accuracy=0.005)
+
+  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='correct_wavelengths_2d',
+                                  collapse_spatially=True, collapse_exposures=True, accuracy=0.001)
+
+  pipeline.remove_starlight(nod_ab, input_folder='correct_wavelengths_2d',
+                            telluric_mask=[0.6, 1.6], svd_broadening_kernel=True)
+
+  pipeline.remove_systematics(nod_ab, N_modes=5, input_folder='remove_starlight')
+
+  pipeline.detection_map(model_flux, model_wavel, rv_grid=np.linspace(-100, 100, 201), vsini_grid=None,
+                         nod_ab=nod_ab, input_folder='remove_systematics' error_weighted=False)
 
 Or, for unresolved targets (e.g. transiting exoplanets), the 1D spectra are already extracted by the ``obs_nodding`` method so we only need to apply the additional wavelength correction:
 
 .. code-block:: python
 
   pipeline.correct_wavelengths(nod_ab='A', create_plots=True)
+
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=True, file_id=0)
+
   pipeline.export_spectra(nod_ab='A', corrected=True)  
 
 Finally, for removing any intermediate data products and freeing up some disk space:

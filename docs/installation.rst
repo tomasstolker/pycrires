@@ -33,6 +33,8 @@ Installation from `Github <https://github.com/tomasstolker/pycrires>`_ is also p
 
     $ pip install git+https://github.com/tomasstolker/pycrires.git
 
+The Github version is most up to date since it contains the latest implementations that may not yet have been included in the official release.
+
 Cloning the repository
 ^^^^^^^^^^^^^^^^^^^^^^
 
