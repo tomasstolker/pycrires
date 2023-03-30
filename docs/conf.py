@@ -50,17 +50,30 @@ exclude_patterns = ['.ipynb_checkpoints/*']
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_book_theme'
+# html_theme = 'sphinx_book_theme'
+#
+# html_theme_options = {
+#     'path_to_docs': 'docs',
+#     'repository_url': 'https://github.com/tomasstolker/pycrires',
+#     'repository_branch': 'main',
+#     'use_edit_page_button': True,
+#     'use_issues_button': True,
+#     'use_repository_button': True,
+#     'use_download_button': True,
+# }
+
+html_theme = 'pydata_sphinx_theme'
 
 html_theme_options = {
-    'path_to_docs': 'docs',
-    'repository_url': 'https://github.com/tomasstolker/pycrires',
-    'repository_branch': 'main',
+    'github_url': 'https://github.com/tomasstolker/pycrires',
     'use_edit_page_button': True,
-    'use_issues_button': True,
-    'use_repository_button': True,
-    'use_download_button': True,
-    'logo_only': False,
+}
+
+html_context = {
+    "github_user": "tomasstolker",
+    "github_repo": "pycrires",
+    "github_version": "main",
+    "doc_path": "docs",
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,

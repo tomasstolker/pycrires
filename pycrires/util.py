@@ -1,11 +1,24 @@
-import numpy as np
-from scipy.signal import savgol_filter
-from scipy.interpolate import interp1d
+"""
+Module with utility functions for ``pycrires``.
+"""
+
+import bz2
+import lzma
 import os
+
+from typing import Optional, Tuple
+
+import numpy as np
+import pooch
+
 from PyAstronomy.pyasl import fastRotBroad
+from scipy.interpolate import interp1d
+from scipy.signal import savgol_filter
+from typeguard import typechecked
 
 
-def lowpass_filter(flux, window_length):
+@typechecked
+def lowpass_filter(flux: np.ndarray, window_length: int) -> np.ndarray:
     """
     Function that low-pass filters a spectrum.
 
@@ -15,23 +28,28 @@ def lowpass_filter(flux, window_length):
         Spectrum to low-pass filter
     window_length : int
         Length of the Savitsky-Golay filter to use
+
     Returns
     -------
     NoneType
         filtered: np.ndarray
         The low-pass filtered spectrum
     """
+
     nans = np.isnan(flux)
+
     if np.sum(nans) > 0.5 * flux.size:
         return np.tile(np.nan, flux.size)
-    else:
-        window_length = min(window_length, 2 * (np.sum(~nans) // 2) - 1)
-        filtered = flux.copy()
-        filtered[~nans] = np.array(savgol_filter(flux[~nans], window_length, 2))
-        return filtered
+
+    window_length = min(window_length, 2 * (np.sum(~nans) // 2) - 1)
+    filtered = flux.copy()
+    filtered[~nans] = np.array(savgol_filter(flux[~nans], window_length, 2))
+
+    return filtered
 
 
-def highpass_filter(order_flux, window_length):
+@typechecked
+def highpass_filter(order_flux: np.ndarray, window_length: int) -> np.ndarray:
     """
     Function that high-pass filters a spectrum.
 
@@ -41,16 +59,26 @@ def highpass_filter(order_flux, window_length):
         Spectrum to high-pass filter
     window_length : int
         Length of the Savitsky-Golay filter to use
+
     Returns
     -------
     filtered: np.ndarray
         The high-pass filtered spectrum
     """
+
     continuum = lowpass_filter(order_flux, window_length)
+
     return order_flux - continuum
 
 
-def mask_tellurics(order_flux, order_wl, lower_lim=0.5, upper_lim=2.0, fill_val=np.nan):
+@typechecked
+def mask_tellurics(
+    order_flux: np.ndarray,
+    order_wl: np.ndarray,
+    lower_lim: float = 0.5,
+    upper_lim: float = 2.0,
+    fill_val: float = np.nan,
+) -> np.ndarray:
     """
     Function that masks telluric absorption or emission lines.
 
@@ -69,13 +97,15 @@ def mask_tellurics(order_flux, order_wl, lower_lim=0.5, upper_lim=2.0, fill_val=
         Upper limit for the masking. A value of 2. will mask all
         tellurics that have more than 100% excess flux w.r.t to the continuum
         envelope.
-    fill_val :
+    fill_val : float
         Value to fill the masked bins with.
+
     Returns
     -------
     masked_order: np.ndarray
         2D spectrum (N_rows, N_wavelengths) with applied masking.
     """
+
     wl = np.nanmedian(order_wl, axis=0)
     tot_spec = np.nansum(order_flux, axis=0)
     percentile = np.nanpercentile(tot_spec, 0.3)
@@ -85,10 +115,18 @@ def mask_tellurics(order_flux, order_wl, lower_lim=0.5, upper_lim=2.0, fill_val=
     to_mask = (cont_normalized_flux < lower_lim) + (cont_normalized_flux > upper_lim)
     masked_order = np.copy(order_flux)
     masked_order[:, to_mask] = fill_val
+
     return masked_order
 
 
-def fit_svd_kernel(order_flux, order_wl, star_model, max_shift=50, rcond=1e-3):
+@typechecked
+def fit_svd_kernel(
+    order_flux: np.ndarray,
+    order_wl: np.ndarray,
+    star_model: np.ndarray,
+    max_shift: int = 50,
+    rcond: float = 1e-3,
+) -> np.ndarray:
     """
      Function that tries to determine the line spread function of each row
      using a Singular Value Decomposition.
@@ -116,7 +154,9 @@ def fit_svd_kernel(order_flux, order_wl, star_model, max_shift=50, rcond=1e-3):
          contribution to each row corrected for the local line spread
          function.
     """
+
     result = np.copy(order_flux)
+
     for i, (spec, wl, model) in enumerate(zip(order_flux, order_wl, star_model)):
         interpolator = interp1d(
             wl, model, bounds_error=False, fill_value=np.nanmedian(model)
@@ -131,10 +171,14 @@ def fit_svd_kernel(order_flux, order_wl, star_model, max_shift=50, rcond=1e-3):
         amps = proj_matrix.T.dot(spec)
         reconstructed = amps.dot(modes)
         result[i] = reconstructed
+
     return result
 
 
-def flag_outliers(order_flux, sigma=4, fill_value=np.nan):
+@typechecked
+def flag_outliers(
+    order_flux: np.ndarray, sigma: float = 4.0, fill_value: float = np.nan
+) -> np.ndarray:
     """
     Function that flags outliers in a 2D spectrum.
 
@@ -153,15 +197,25 @@ def flag_outliers(order_flux, sigma=4, fill_value=np.nan):
     order_flux: np.ndarray
         2D spectrum (N_rows, N_wavelengths) with flagged values.
     """
+
     z = (order_flux - np.nanmedian(order_flux, axis=1)[:, np.newaxis]) / np.nanstd(
         order_flux, axis=1
     )[:, np.newaxis]
+
     outliers = z > sigma
+
     order_flux[outliers] = fill_value
+
     return order_flux
 
 
-def load_BT_SETTL_template(temperature, log_g, vsini, wl_lims=[0.8, 3.0]):
+@typechecked
+def load_BT_SETTL_template(
+    temperature: float,
+    log_g: float,
+    vsini: Optional[float] = None,
+    wl_lims: Tuple[float, float] = (0.8, 3.0),
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Function that loads a BT-SETTL template for the given
     temperature, surface gravity and vsin(i).
@@ -171,24 +225,24 @@ def load_BT_SETTL_template(temperature, log_g, vsini, wl_lims=[0.8, 3.0]):
     temperature: float
         Effective temperature of the model to load. The grid has a
         resolution of 100 K, so will be rounded to the nearest value.
-    log_g: flota
+    log_g: float
         Surface gravity of the model to load. The grid has a
         resolution of 0.5 dex, so will be rounded to the nearest value.
-    vsini : float
-        Rotational velocity of the model to load used for the broadening
-        kernel.
-    wl_lim : list
+    vsini : float, None
+        Rotational velocity of the model to load used for the
+        broadening kernel. The broadening is not applied if the
+        argument is set to ``None``.
+    wl_lim : tuple(float, float)
         Lower and upper limits (in micron) of the wavelength range to load.
 
     Returns
     -------
-    flux: np.ndarray
-        Flux of the planetary template (in ergs/)
+    np.ndarray
+        Flux of the planetary template (in erg/s).
+    np.ndarray
+        Wavelengths.
     """
-    import wget
-    import ssl
 
-    ssl._create_default_https_context = ssl._create_unverified_context
     # The file names contain the main parameters of the models:
     # lte{Teff/10}-{Logg}{[M/H]}a[alpha/H].GRIDNAME.7.spec.gz/bz2/xz
     t_val = int(np.round(temperature / 100))
@@ -206,8 +260,10 @@ def load_BT_SETTL_template(temperature, log_g, vsini, wl_lims=[0.8, 3.0]):
     if not os.path.exists(data_path):
         print("Making local data folder...")
         os.mkdir(data_path)
+
     fpath = os.path.join(data_path, fname)
     decompressed_fpath = fpath[:-4]
+
     if not os.path.exists(decompressed_fpath):
         if t_val < 12:
             url = (
@@ -218,39 +274,53 @@ def load_BT_SETTL_template(temperature, log_g, vsini, wl_lims=[0.8, 3.0]):
                 "https://phoenix.ens-lyon.fr/Grids/BT-Settl/CIFIST2011_2015/SPECTRA/"
                 + fname
             )
+
         print("Downloading BT-SETTL spectra from:", url)
-        file = wget.download(url, fpath)
+
+        downloader = pooch.HTTPDownloader(verify=False)
+
+        pooch.retrieve(
+            url=url,
+            known_hash=None,
+            fname=fname,
+            path=data_path,
+            progressbar=True,
+            downloader=downloader,
+        )
 
         if t_val < 12:
             with open(fpath, "rb") as file:
-                import bz2
-
                 data = file.read()
                 decompressed_data = bz2.decompress(data)
-        else:
-            import lzma
 
+        else:
             decompressed_data = lzma.open(fpath).read()
+
         with open(decompressed_fpath, "wb") as file:
             file.write(decompressed_data)
 
-    with open(decompressed_fpath, "r") as file:
+    with open(decompressed_fpath, "r", encoding="utf-8") as file:
         data = file.readlines()
+
     wl = np.zeros(len(data))
     flux = np.zeros(len(data))
 
     for i, line in enumerate(data):
         split_line = line.split()
         approx_wl = float(split_line[0][:6])
+
         if (approx_wl > wl_lims[0] * 1e4) * (approx_wl < wl_lims[1] * 1e4):
             try:
                 wl[i] = float(split_line[0]) * 1e-4
                 flux[i] = 10 ** (float(split_line[1].replace("D", "E")) - 8)
+
             except:
                 double_splitted = split_line[0].split("-")
                 wl[i] = float(double_splitted[0]) * 1e-4
+
                 if len(split_line) == 2:
                     flux[i] = 10 ** (float(double_splitted[1].replace("D", "E")) - 8)
+
                 else:
                     flux[i] = 10 ** (
                         float(
@@ -263,10 +333,16 @@ def load_BT_SETTL_template(temperature, log_g, vsini, wl_lims=[0.8, 3.0]):
     if wl_lims is not None:
         mask = (wl > wl_lims[0]) * (wl < wl_lims[1])
         wl, flux = wl[mask], flux[mask]
+
     sorting = np.argsort(wl)
     wl = wl[sorting]
     flux = flux[sorting]
     waves_even = np.linspace(np.min(wl), np.max(wl), wl.size * 2)
     flux_even = interp1d(wl, flux)(waves_even)
-    broad_flux = fastRotBroad(waves_even, flux_even, 0.5, vsini)
+
+    if vsini is not None:
+        broad_flux = fastRotBroad(waves_even, flux_even, 0.5, vsini)
+    else:
+        broad_flux = np.copy(flux_even)
+
     return broad_flux, waves_even * 1000
