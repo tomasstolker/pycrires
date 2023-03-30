@@ -14,8 +14,10 @@ import sys
 import urllib.request
 import warnings
 
-from typing import Optional
+from typing import Dict, List, Optional, Tuple, Union
 
+import astropy.constants as const
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import skycalc_ipy
@@ -29,9 +31,9 @@ from matplotlib import pyplot as plt
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
 from typeguard import typechecked
-import pycrires.util as util
 
 import pycrires
+import pycrires.util as util
 
 
 log_book = logging.getLogger(__name__)
@@ -671,7 +673,7 @@ class Pipeline:
                 print(" [DONE]")
 
     @typechecked
-    def _download_archive(self, dpr_type: str, det_dit: Optional[float]):
+    def _download_archive(self, dpr_type: str, det_dit: Optional[float]) -> None:
         """
         Internal method for downloading data from the ESO Science
         Archive.
@@ -797,7 +799,7 @@ class Pipeline:
             )
 
     @typechecked
-    def _plot_image(self, file_type: str, fits_folder: str):
+    def _plot_image(self, file_type: str, fits_folder: str) -> None:
         """
         Internal method for plotting the data of a specified file type.
 
@@ -866,7 +868,7 @@ class Pipeline:
             warnings.warn(f"Could not find {file_type} files to plot.")
 
     @typechecked
-    def _plot_trace(self, dpr_catg: str):
+    def _plot_trace(self, dpr_catg: str) -> None:
         """
         Internal method for plotting the raw data of a specified
         ``DPR.CATG`` together with the traces of the spectral orders.
@@ -1123,7 +1125,7 @@ class Pipeline:
             )
 
     @typechecked
-    def select_bpm(self, wlen_id, dit_select) -> Optional[str]:
+    def select_bpm(self, wlen_id: str, dit_select: float) -> Optional[str]:
         """
         Method for selecting the bad pixel map (BPM)
         of the requested DIT. An adjusted is made
@@ -3173,7 +3175,8 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    def _find_master_flat(self):
+    @typechecked
+    def _find_master_flat(self) -> Tuple[str, str]:
         """
         Find a suitable master flat file from the file dictionary.
 
@@ -3203,7 +3206,24 @@ class Pipeline:
 
         return master_flat_filename, good_key
 
-    def _find_bpm(self, science_wlen, science_dit):
+    @typechecked
+    def _find_bpm(self, science_wlen: str, science_dit: float) -> Optional[str]:
+        """
+        Internal method for ... TODO
+
+        Parameters
+        ----------
+        science_wlen : str
+            TODO
+        science_dit : float
+            TODO
+
+        Returns
+        -------
+        str, None
+            TODO
+        """
+
         assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
         bpm_file = self.select_bpm(science_wlen, science_dit)
         file_name = bpm_file.split("/")[-2:]
@@ -3211,7 +3231,26 @@ class Pipeline:
 
         return bpm_file
 
-    def _find_master_dark(self, science_dit, key="CAL_DARK_MASTER"):
+    @typechecked
+    def _find_master_dark(
+        self, science_dit: float, key: str = "CAL_DARK_MASTER"
+    ) -> List[str]:
+        """
+        Internal method for ... TODO
+
+        Parameters
+        ----------
+        science_dit : float
+            TODO
+        key : str
+            TODO
+
+        Returns
+        -------
+        list(str)
+            TODO
+        """
+
         assert key in self.file_dict, f"No {key} BPM found"
 
         dits = [f["DIT"] for f in self.file_dict[key].values()]
@@ -3220,10 +3259,24 @@ class Pipeline:
 
         return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
 
-    def _find(self, key, key_type=None):
+    @typechecked
+    def _find(self, key: str, key_type: Optional[str] = None) -> Dict[str, List[str]]:
         """
-        Find a file in the file dictionary given the `key`
-        and an  optional `key_type` (usually `fpet` or `une`).
+        Internal method for finding a file in the file dictionary
+        given the `key` and an  optional `key_type` (usually `fpet`
+        or `une`).
+
+        Parameters
+        ----------
+        key : str
+            TODO
+        key_type : str, None
+            TODO
+
+        Returns
+        -------
+        dict
+            TODO
         """
 
         assert key in self.file_dict, f"No {key} found"
@@ -3469,7 +3522,11 @@ class Pipeline:
         # in the util_calib_nodding folder. In that case, use
         # those data instead of the raw nodding data
 
-        found_calib_nodding = False
+        # This does not work because the obs_nodding recipe
+        # does not support input from util_calib
+        # Using obs_nodding after util_calib_noddig
+        # is probably not useful anyway because the
+        # calibration can also be done with obs_nodding
 
         if os.path.exists(self.calib_folder / "util_calib_nodding"):
             files_raw_a = self.header_data[nod_a_exp]["ORIGFILE"]
@@ -3501,6 +3558,10 @@ class Pipeline:
                 )
 
                 found_calib_nodding = True
+
+                raise RuntimeError("Support for using obs_nodding on "
+                                   "util_calib_nodding is not yet "
+                                   "implemented.")
 
             else:
                 print(
@@ -3545,31 +3606,21 @@ class Pipeline:
 
                 continue
 
-            if found_calib_nodding:
-                file_path_0 = f"{self.path}/calib/util_calib_nodding/{file_0[:-5]}_calibrated.fits"
-                file_path_1 = f"{self.path}/calib/util_calib_nodding/{file_1[:-5]}_calibrated.fits"
-
-            else:
-                file_path_0 = f"{self.path}/raw/{file_0}"
-                file_path_1 = f"{self.path}/raw/{file_1}"
+            file_path_0 = f"{self.path}/raw/{file_0}"
+            file_path_1 = f"{self.path}/raw/{file_1}"
 
             header_0 = fits.getheader(file_path_0)
             # header_1 = fits.getheader(file_path_1)
 
-            if found_calib_nodding:
-                check_key = "ESO PRO TECH"
-            else:
-                check_key = "ESO DPR TECH"
-
-            if check_key in header_0:
-                if header_0[check_key] == "SPECTRUM,NODDING,OTHER":
+            if "ESO DPR TECH" in header_0:
+                if header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,OTHER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_OTHER\n")
                     self._update_files("OBS_NODDING_OTHER", file_path_0)
 
                     sof_open.write(f"{file_path_1} OBS_NODDING_OTHER\n")
                     self._update_files("OBS_NODDING_OTHER", file_path_1)
 
-                elif header_0[check_key] == "SPECTRUM,NODDING,JITTER":
+                elif header_0["ESO DPR TECH"] == "SPECTRUM,NODDING,JITTER":
                     sof_open.write(f"{file_path_0} OBS_NODDING_JITTER\n")
                     self._update_files("OBS_NODDING_JITTER", file_path_0)
 
@@ -3578,44 +3629,47 @@ class Pipeline:
 
             else:
                 raise RuntimeError(
-                    f"Could not find {check_key} in the header of {file_path_0}."
+                    f"Could not find 'ESO DPR TECH' in the header of {file_path_0}."
                 )
 
             # Find UTIL_MASTER_FLAT or CAL_FLAT_MASTER file
 
-            if not found_calib_nodding:
-                file_found = False
+            file_found = False
 
-                if "UTIL_MASTER_FLAT" in self.file_dict:
-                    for key in self.file_dict["UTIL_MASTER_FLAT"]:
-                        if not file_found:
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
-                            )
-                            sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
-                            file_found = True
+            if "UTIL_MASTER_FLAT" in self.file_dict:
+                for key in self.file_dict["UTIL_MASTER_FLAT"]:
+                    if not file_found:
+                        file_name = key.split("/")[-2:]
+                        print(
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_MASTER_FLAT"
+                        )
+                        sof_open.write(f"{key} UTIL_MASTER_FLAT\n")
+                        file_found = True
+            if "CAL_FLAT_MASTER" in self.file_dict:
+                for key in self.file_dict["CAL_FLAT_MASTER"]:
+                    if not file_found:
+                        file_name = key.split("/")[-2:]
+                        print(
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
+                        )
+                        sof_open.write(f"{key} CAL_FLAT_MASTER\n")
+                        file_found = True
 
-                if "CAL_FLAT_MASTER" in self.file_dict:
-                    for key in self.file_dict["CAL_FLAT_MASTER"]:
-                        if not file_found:
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_FLAT_MASTER"
-                            )
-                            sof_open.write(f"{key} CAL_FLAT_MASTER\n")
-                            file_found = True
-
-                if not file_found:
-                    warnings.warn("Could not find a master flat.")
+            if not file_found:
+                warnings.warn("Could not find a master flat.")
 
             # Find CAL_DARK_BPM file
 
-            if not found_calib_nodding:
-                file_found = False
+            file_found = False
 
-                if "CAL_DARK_BPM" in self.file_dict:
-                    bpm_file = self.select_bpm(science_wlen, science_dit)
+            if "CAL_DARK_BPM" in self.file_dict:
+                bpm_file = self.select_bpm(science_wlen, science_dit)
+
+                if bpm_file is not None:
+                    file_name = bpm_file.split("/")[-2:]
+                    print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                    sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                    file_found = True
 
                     if bpm_file is not None:
                         file_name = bpm_file.split("/")[-2:]
@@ -3625,8 +3679,8 @@ class Pipeline:
                         sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
                         file_found = True
 
-                if not file_found:
-                    warnings.warn("Could not find a bap pixel map.")
+            if not file_found:
+                warnings.warn("Could not find a bap pixel map.")
 
             # Find UTIL_WAVE_TW file
 
@@ -4061,7 +4115,6 @@ class Pipeline:
                 # Find UTIL_WAVE_TW file
 
                 file_found = False
-                # sof_open.write(f"/users/ricolandman/Research_data/Alex_h3+_crires/raw/L3262_tw.fits UTIL_WAVE_TW\n")
 
                 for calib_type in ["fpet", "une"]:
                     if "UTIL_WAVE_TW" in self.file_dict:
@@ -4709,7 +4762,12 @@ class Pipeline:
         N_grid: int = 51,
         window_length: int = 201,
         return_cross_corr: bool = False,
-    ) -> tuple([np.ndarray, float, float]):
+    ) -> Union[
+        Tuple[
+            np.ndarray, Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]
+        ],
+        Tuple[Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]],
+    ]:
         template_interp = interpolate.interp1d(
             telluric_template[:, 0],
             telluric_template[:, 1],
@@ -5025,11 +5083,15 @@ class Pipeline:
 
             # Save the correlation plots
             if create_plots:
+                if input_folder == "obs_nodding":
+                    out_label = fits_file[-10:-5]
+                elif input_folder == "util_extract_science":
+                    out_label = fits_file[-17:-12]
+
                 fig.add_subplot(111, frame_on=False)
                 plt.tick_params(labelcolor="none", bottom=False, left=False)
                 plt.ylabel("Slope", fontsize=16)
                 plt.xlabel("Offset (nm)", fontsize=16)
-                out_label = fits_file[-10:-5]
                 plt.tight_layout()
                 plt.savefig(f"{output_dir}/correlation_map_{out_label}.png")
 
@@ -5303,13 +5365,23 @@ class Pipeline:
 
             # Save the correlation plots
             if create_plots:
+                file_split = fits_file.split("_")
+
+                if file_split[-4] == "nod":
+                    nod_id = file_split[-3]
+                    exp_id = file_split[-2]
+                else:
+                    nod_id = file_split[-4]
+                    exp_id = file_split[-3]
+
                 fig.add_subplot(111, frame_on=False)
                 plt.tick_params(labelcolor="none", bottom=False, left=False)
                 plt.ylabel("Slope", fontsize=16)
                 plt.xlabel("Offset (nm)", fontsize=16)
-                out_label = fits_file[-17:-5]
                 plt.tight_layout()
-                plt.savefig(f"{output_dir}/correlation_map_{out_label}_{accuracy}.png")
+                plt.savefig(
+                    f"{output_dir}/correlation_map_{nod_id}_{exp_id}_{accuracy}.png"
+                )
 
             # Add corrected wavelengths tCORR_WAVE' in o existing fits file
             if not collapse_exposures:
@@ -5958,10 +6030,7 @@ class Pipeline:
         out_files = []
 
         for fits_idx, fits_item in enumerate(fits_files):
-            if fits_idx == 0:
-                print(f"Processing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
-            else:
-                print(f"\nProcessing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
+            print(f"Processing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
 
             file_name = str(fits_item).split("/")[-2:]
             print(f"   - Input spectrum: product/{file_name[-2]}/{file_name[-1]}")
@@ -5974,7 +6043,30 @@ class Pipeline:
 
             spec_shift = np.zeros(spec.shape)
 
-            def gaussian(x, amp, mean, sigma):
+            @typechecked
+            def _gaussian(
+                x: np.ndarray, amp: float, mean: float, sigma: float
+            ) -> np.ndarray:
+                """
+                One-dimensional Gaussian function.
+
+                Parameters
+                ----------
+                x : np.ndarray
+                    Array with input values.
+                amp : float
+                    Amplitude.
+                mean : float
+                    Mean 
+                sigma : float
+                    Standard deviation.
+
+                Returns
+                -------
+                np.ndarray
+                    Array with output value.
+                """
+
                 return amp * np.exp(-0.5 * (x - mean) ** 2 / sigma**2)
 
             gauss_amp = np.zeros((spec.shape[:2]))
@@ -6012,9 +6104,10 @@ class Pipeline:
                         guess = (np.amax(y_data), peak_I, 1.0)
                         nans = np.isnan(y_data)
                         y_data[nans] = 0
-                        result = optimize.curve_fit(gaussian, x_data, y_data, p0=guess)[
-                            0
-                        ]
+
+                        result = optimize.curve_fit(
+                            _gaussian, x_data, y_data, p0=guess
+                        )[0]
 
                         print("\r" + len(print_msg) * " ", end="")
 
@@ -6075,12 +6168,12 @@ class Pipeline:
             )
 
             file_name = fits_file.split("/")[-2:]
-            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}\n")
 
             hdu_list.writeto(fits_file, overwrite=True)
             out_files.append(fits_file)
 
-        print("\nOutput files:")
+        print("Output files:")
 
         for item in out_files:
             self._update_files(f"FIT_GAUSSIAN_2D_{nod_ab}", str(item))
@@ -6101,8 +6194,9 @@ class Pipeline:
         Method for removing stellar contribution from each row
         along the slit. This is done by calculating a master stellar
         spectrum and fitting this to the local continuum of each row.
-        Subsequently, we correct for changes in the line spread function
-        along the slit using a Singular Value Decomposition.
+        Subsequently, a correction is applied for changes in the
+        line spread function along the slit using a singular value
+        decomposition (SVD).
 
         Parameters
         ----------
@@ -6120,7 +6214,7 @@ class Pipeline:
             deepest tellurics. E.g. 'telluric_mask = [0.4, 2.0] will
             result in all spectral bins with less than 40% or more than
             200% flux w.r.t the continuum to be masked.
-        svd_broadening_kernel: bool
+        svd_broadening_kernel : bool
             If True, the local line spread function is fitted for each
             row using an SVD. This results in better stellar subtraction
             but is much slower and can result in self-subtraction of the
@@ -6134,7 +6228,7 @@ class Pipeline:
 
         self._print_section("Remove starlight")
 
-        output_dir = self.product_folder / "star_removed"
+        output_dir = self.product_folder / "remove_starlight"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -6144,21 +6238,26 @@ class Pipeline:
         out_files = []
 
         for fits_idx, fits_file in enumerate(fits_files):
-            print(f"Removing starlight from file {fits_file}")
+            print(
+                f'Reading spectra from {fits_file.split("/")[-2]}/{fits_file.split("/")[-1]}:'
+            )
+
             hdu_list = fits.open(fits_file)
             spec = hdu_list["SPEC"].data
             wl = hdu_list["WAVE"].data
             err = hdu_list["ERR"].data
+
             star_subtracted = np.zeros_like(spec)
+
             for det_idx in np.arange(3):
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])
                 ):
                     print(
-                        f"Removing starlight for detector {det_idx} "
-                        f"order {order_idx}... ",
+                        f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
                         end="\r",
                     )
+
                     # Mask deepest tellurics
                     telluric_masked = util.mask_tellurics(
                         order_spec, order_wl, telluric_mask[0], telluric_mask[1]
@@ -6189,6 +6288,7 @@ class Pipeline:
                         fitted_star_model = util.fit_svd_kernel(
                             telluric_masked, order_wl, star_model, max_shift=50
                         )
+
                     else:
                         fitted_star_model = star_model
 
@@ -6203,17 +6303,17 @@ class Pipeline:
             hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
 
             fits_file = (
-                f"{self.path}/product/star_removed/spectra_"
+                f"{self.path}/product/remove_starlight/spectra_"
                 + f"nod_{nod_ab}_{fits_idx:03d}.fits"
             )
 
             file_name = fits_file.split("/")[-2:]
-            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}\n")
 
             hdu_list.writeto(fits_file, overwrite=True)
             out_files.append(fits_file)
 
-        print("\nOutput files:")
+        print("Output files:")
 
         for item in out_files:
             self._update_files(f"STAR_REMOVED_{nod_ab}", str(item))
@@ -6226,13 +6326,13 @@ class Pipeline:
         self,
         nod_ab: str = "A",
         N_modes: int = 5,
-        input_folder: str = "star_removed",
+        input_folder: str = "remove_starlight",
         normalize: bool = True,
-        exclude_rows: list = [],
-    ):
+        exclude_rows: Optional[List[int]] = None,
+    ) -> None:
         """
         Method for removing systematics from the data using
-        a Principal Component Analysis.
+        a principal component analysis (PCA).
 
         Parameters
         ----------
@@ -6246,18 +6346,20 @@ class Pipeline:
             spectra that should be processed.
         normalize: bool
             If true, all rows are normalized before doing the PCA.
-        exclude_rows: list
+        exclude_rows: list, None
             Rows to remove before building the PCA model. This is
             used to avoid self-subtraction of the planet signal.
             Not implemented yet!
+
         Returns
         -------
         NoneType
             None
         """
-        self._print_section("Remove PCA")
 
-        output_dir = self.product_folder / "pca_removed"
+        self._print_section("Remove systematics")
+
+        output_dir = self.product_folder / "remove_systematics"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -6267,19 +6369,24 @@ class Pipeline:
         out_files = []
 
         for fits_idx, fits_file in enumerate(fits_files):
-            print(f"Removing {N_modes} PCA components from file {fits_file}")
+            print(
+                f'Reading spectra from {fits_file.split("/")[-2]}/{fits_file.split("/")[-1]}:'
+            )
+
             hdu_list = fits.open(fits_file)
             spec = hdu_list["SPEC"].data
+
             wl = hdu_list["WAVE"].data
             err = hdu_list["ERR"].data
+
             pca_subtracted = np.zeros_like(spec)
+
             for det_idx in np.arange(3):
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])
                 ):
                     print(
-                        f"Removing PCA components for detector {det_idx}"
-                        f" order {order_idx}... ",
+                        f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
                         end="\r",
                     )
 
@@ -6318,46 +6425,47 @@ class Pipeline:
             hdu_list.append(fits.ImageHDU(wl, name="WAVE"))
 
             fits_out = (
-                f"{self.path}/product/pca_removed/spectra_"
+                f"{self.path}/product/remove_systematics/spectra_"
                 + f"nod_{nod_ab}_{fits_idx:03d}.fits"
             )
 
             file_name = fits_out.split("/")[-2:]
-            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}\n")
 
             hdu_list.writeto(fits_out, overwrite=True)
             out_files.append(fits_out)
 
-        print("\nOutput files:")
+        print("Output files:")
 
         for item in out_files:
-            self._update_files(f"PCA_REMOVED_{nod_ab}", str(item))
+            self._update_files(f"SYSTEMATICS_REMOVED_{nod_ab}", str(item))
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cross_correlate(
+    def detection_map(
         self,
         planet_model: np.ndarray,
         planet_model_wl: np.ndarray,
         rv_grid: np.ndarray = np.linspace(-150, 150, 301),
+        vsini_grid: Optional[np.ndarray] = None,
         nod_ab: str = "A",
-        input_folder="pca_removed",
+        input_folder="remove_systematics",
         hp_window_length=501,
         error_weighted=False,
-    ):
+    ) -> None:
         """
-        Method for cross-correlating  each row with a model
+        Method for cross-correlating each row with a model
         template.
 
         Parameters
         ----------
-        planet_model: np.ndarray
+        planet_model : np.ndarray
             Template used for cross-correlation
-        planet_model_wl: np.ndarray
+        planet_model_wl : np.ndarray
             Wavelengths corresponding to the template in nm.
-        rv_grid: np.ndarray
+        rv_grid : np.ndarray
             Radial velocities to calculate the cross-correlation on.
         nod_ab : str
             Nod position which will be cross-correlated.
@@ -6371,14 +6479,16 @@ class Pipeline:
         error_weighted: bool
             If True, each spectral bin is weighted by the noise in the
             cross-correlation.
+
         Returns
         -------
         NoneType
             None
         """
-        self._print_section("Cross-correlation")
 
-        output_dir = self.product_folder / "cross_correlate"
+        self._print_section("Detection map")
+
+        output_dir = self.product_folder / "detection_map"
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -6387,10 +6497,26 @@ class Pipeline:
         fits_files = sorted(glob.glob(str(path_load)))
         out_files = []
 
-        betas = 1 - rv_grid / 2.997e5
+        betas = 1.0 - rv_grid / (const.c.value * 1e-3)
         total_ccf = 0
 
-        def make_ccf_plot(ccf_array):
+        @typechecked
+        def make_ccf_plot(ccf_array: np.ndarray) -> mpl.figure.Figure:
+            """
+            Internal method for TODO
+
+            Parameters
+            ----------
+            ccf_array : np.ndarray
+                TODO
+
+            Returns
+            -------
+            mpl.figure.Figure
+                TODO
+            """
+
+            fov = spec.shape[2] * 0.056 / 2
             mask = np.abs(rv_grid) > 50
             norm_ccf = (
                 ccf_array - np.nanmedian(ccf_array[:, mask], axis=1)[:, np.newaxis]
@@ -6405,31 +6531,53 @@ class Pipeline:
                 origin="lower",
             )
             plt.colorbar()
-            plt.ylabel('Separation ["]')
-            plt.xlabel("Radial velocity [km/s]")
+            plt.ylabel("Separation (arcsec)")
+            plt.xlabel("Radial velocity (km/s)")
             return fig
 
         for fits_idx, fits_file in enumerate(fits_files):
+            print(
+                f'Reading spectra from {fits_file.split("/")[-2]}/{fits_file.split("/")[-1]}:'
+            )
+
             hdu_list = fits.open(fits_file)
+
             spec = hdu_list["SPEC"].data
             wl = hdu_list["WAVE"].data
             err = hdu_list["ERR"].data
+
             total_ccf_exp = 0
-            ccfs = np.zeros((spec.shape[0], spec.shape[1], spec.shape[2], rv_grid.size))
+
+            if vsini_grid is None:
+                ccfs = np.zeros(
+                    (spec.shape[0], spec.shape[1], spec.shape[2], rv_grid.size)
+                )
+            else:
+                ccfs = np.zeros(
+                    (
+                        spec.shape[0],
+                        spec.shape[1],
+                        spec.shape[2],
+                        rv_grid.size,
+                        vsini_grid.size,
+                    )
+                )
 
             for det_idx in np.arange(3):
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])
                 ):
                     print(
-                        f"Cross-correlating detector {det_idx}"
-                        f"order {order_idx}... ",
+                        f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
                         end="\r",
                     )
+
                     waves = np.nanmedian(order_wl, axis=0)
 
                     # Interpolate model
+
                     shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
+
                     template = interpolate.interp1d(planet_model_wl, planet_model)(
                         shifted_waves
                     )
@@ -6441,9 +6589,11 @@ class Pipeline:
                     ).T
 
                     # Flag outliers
+
                     order_spec = util.flag_outliers(order_spec, sigma=3)
 
                     # Cross-correlation
+
                     order_err[np.isnan(order_err)] = np.inf
                     order_err[order_err == 0] = np.inf
                     order_spec[np.isnan(order_spec)] = 0
@@ -6452,18 +6602,19 @@ class Pipeline:
                         # Clip errors at half their median
                         order_err = np.maximum(order_err, 0.5 * np.nanmedian(order_err))
                         ccf = (order_spec / order_err**2).dot(hp_template)
+
                     else:
                         ccf = (order_spec).dot(hp_template)
+
                     ccfs[det_idx, order_idx] = ccf
                     total_ccf_exp += ccf
-            total_ccf += total_ccf_exp
 
-            fov = spec.shape[2] * 0.056 / 2
+            total_ccf += total_ccf_exp
 
             make_ccf_plot(total_ccf_exp)
 
             plot_file = (
-                f"{self.path}/product/cross_correlate/ccf_"
+                f"{self.path}/product/detection_map/ccf_"
                 + f"nod_{nod_ab}_{fits_idx:03d}.png"
             )
             plt.savefig(plot_file)
@@ -6473,18 +6624,21 @@ class Pipeline:
             hdu_list.append(fits.ImageHDU(ccfs, name="CCF"))
             hdu_list.append(fits.ImageHDU(rv_grid, name="RV"))
 
+            if vsini_grid is not None:
+                hdu_list.append(fits.ImageHDU(vsini_grid, name="VSINI"))
+
             fits_file = (
-                f"{self.path}/product/cross_correlate/ccf_"
+                f"{self.path}/product/detection_map/ccf_"
                 + f"nod_{nod_ab}_{fits_idx:03d}.fits"
             )
 
             file_name = fits_file.split("/")[-2:]
-            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}")
+            print(f"\n   - Output spectrum: product/{file_name[-2]}/{file_name[-1]}\n")
 
             hdu_list.writeto(fits_file, overwrite=True)
             out_files.append(fits_file)
 
-        print("\nOutput files:")
+        print("Output files:")
 
         for item in out_files:
             self._update_files(f"CCF_{nod_ab}", str(item))
@@ -6494,7 +6648,7 @@ class Pipeline:
 
         make_ccf_plot(total_ccf)
         plot_file = (
-            f"{self.path}/product/cross_correlate/total_ccf_"
+            f"{self.path}/product/detection_map/total_ccf_"
             + f"nod_{nod_ab}_{fits_idx:03d}.png"
         )
         plt.savefig(plot_file)
@@ -6541,24 +6695,33 @@ class Pipeline:
 
         if corrected:
             fits_file = (
-                f"{self.path}/product/correct_wavelengths/"
-                + f"cr2res_obs_nodding_extracted{nod_ab}_"
-                + f"{file_id:03d}_corr.fits"
+                f"{self.path}/product/correct_wavelengths_2d/"
+                + f"spectra_nod_{nod_ab}_{file_id:03d}_"
+                + "center_corr.fits"
             )
 
-            print(
-                f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}_corr.fits"
-            )
+            if not os.path.isfile(fits_file):
+                fits_file = (
+                    f"{self.path}/product/correct_wavelengths/"
+                    + f"cr2res_obs_nodding_extracted{nod_ab}_"
+                    + f"{file_id:03d}_corr.fits"
+                )
 
-        else:
+                if not os.path.isfile(fits_file):
+                    corrected = False
+
+                    warnings.warn("Could not find spectra in either "
+                                  "the correct_wavelengths_2d or "
+                                  "correct_wavelengths folder so "
+                                  "setting \'corrected=False\'.")
+
+        if not corrected:
             fits_file = (
                 f"{self.path}/product/obs_nodding/cr2res_obs_nodding_"
                 + f"extracted{nod_ab}_{file_id:03d}.fits"
             )
 
-            print(
-                f"Spectrum file: cr2res_obs_nodding_extracted{nod_ab}_{file_id:03d}.fits"
-            )
+        print(f"Spectrum file: {fits_file.split('/')[-1]}")
 
         print(f"Reading FITS data of nod {nod_ab}...", end="", flush=True)
 
