@@ -4,5 +4,6 @@ jupyter
 nbconvert
 nbsphinx
 pandoc
-sphinx-automodapi  
+pydata-sphinx-theme<=0.13.1
+sphinx-automodapi
 sphinx_book_theme
