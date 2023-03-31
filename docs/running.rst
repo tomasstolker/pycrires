@@ -82,7 +82,7 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
   pipeline.remove_starlight(nod_ab, input_folder='correct_wavelengths_2d',
                             telluric_mask=[0.6, 1.6], svd_broadening_kernel=True)
 
-  pipeline.remove_systematics(nod_ab, N_modes=5, input_folder='remove_starlight')
+  pipeline.remove_systematics(nod_ab, n_modes=5, input_folder='remove_starlight')
 
   pipeline.detection_map(model_flux, model_wavel, rv_grid=np.linspace(-100, 100, 201), vsini_grid=None,
                          nod_ab=nod_ab, input_folder='remove_systematics' error_weighted=False)

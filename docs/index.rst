@@ -10,6 +10,5 @@ Documentation for *pycrires*
 
    installation
    running
-   tutorial.ipynb
    modules
    about

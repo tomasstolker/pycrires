@@ -6099,7 +6099,7 @@ class Pipeline:
                 amp : float
                     Amplitude.
                 mean : float
-                    Mean
+                    Mean.
                 sigma : float
                     Standard deviation.
 
@@ -6367,7 +6367,7 @@ class Pipeline:
     def remove_systematics(
         self,
         nod_ab: str = "A",
-        N_modes: int = 5,
+        n_modes: int = 5,
         input_folder: str = "remove_starlight",
         normalize: bool = True,
         exclude_rows: Optional[List[int]] = None,
@@ -6381,7 +6381,7 @@ class Pipeline:
         nod_ab : str
             Nod position of which the PCA components will be
             removed.
-        N_modes : int
+        n_modes : int
             Number of PCA components to subtract from each spectrum.
         input_folder : str
             Subfolder in the `product` folder that contains the
@@ -6452,7 +6452,7 @@ class Pipeline:
                     # SVD
                     um, sm, vm = np.linalg.svd(order_spec, full_matrices=False)
                     s_new = np.copy(sm)
-                    s_new[:N_modes] = 0
+                    s_new[:n_modes] = 0
                     residuals = um.dot(np.diag(s_new)).dot(vm)
 
                     # Put NaNs back
@@ -6493,9 +6493,9 @@ class Pipeline:
         rv_grid: np.ndarray = np.linspace(-150, 150, 301),
         vsini_grid: Optional[np.ndarray] = None,
         nod_ab: str = "A",
-        input_folder="remove_systematics",
-        hp_window_length=501,
-        error_weighted=False,
+        input_folder: str = "remove_systematics",
+        hp_window_length: int = 501,
+        error_weighted: bool = False,
     ) -> None:
         """
         Method for cross-correlating each row with a model
@@ -6504,7 +6504,7 @@ class Pipeline:
         Parameters
         ----------
         model_flux : np.ndarray
-            Template used for cross-correlation
+            Template used for cross-correlation.
         model_wavel : np.ndarray
             Wavelengths corresponding to the template in nm.
         rv_grid : np.ndarray
@@ -6529,7 +6529,7 @@ class Pipeline:
             Length (in spectral pixels) of the high-pass filter applied
             to the template before cross-correlating. This should have
             the same value as 'lp_window_length' in the stellar removal.
-        error_weighted: bool
+        error_weighted : bool
             If True, each spectral bin is weighted by the noise in the
             cross-correlation.
 
