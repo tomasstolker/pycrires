@@ -14,7 +14,7 @@ import sys
 import urllib.request
 import warnings
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import astropy.constants as const
 import matplotlib as mpl
@@ -28,15 +28,18 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
+from PyAstronomy.pyasl import fastRotBroad
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
 from typeguard import typechecked
 
 import pycrires
-import pycrires.util as util
+from pycrires import util
 
 
 log_book = logging.getLogger(__name__)
+
+PIXEL_SCALE = 0.056  # (arcsec)
 
 
 class Pipeline:
@@ -391,10 +394,11 @@ class Pipeline:
 
                 if "." in file_tmp:
                     decimal = len(file_tmp.split(".")[-1])
+
                     if decimal == 5:
-                        for key, value in self.file_dict["DARK"].items():
-                            if float(file_tmp) == round(value["DIT"], 5):
-                                file_dict["DIT"] = value["DIT"]
+                        for dark_item in self.file_dict["DARK"]:
+                            if float(file_tmp) == round(dark_item["DIT"], 5):
+                                file_dict["DIT"] = dark_item["DIT"]
                                 break
                 else:
                     file_dict["DIT"] = float(file_tmp)
@@ -596,7 +600,7 @@ class Pipeline:
 
                 config_text = config_text.replace(
                     "PIX_SCALE_VALUE=0.086",
-                    "PIX_SCALE_VALUE=0.056",
+                    f"PIX_SCALE_VALUE={PIXEL_SCALE}",
                 )
 
                 config_text = config_text.replace(
@@ -3225,8 +3229,11 @@ class Pipeline:
         """
 
         assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
+
         bpm_file = self.select_bpm(science_wlen, science_dit)
+
         file_name = bpm_file.split("/")[-2:]
+
         print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
 
         return bpm_file
@@ -3254,7 +3261,9 @@ class Pipeline:
         assert key in self.file_dict, f"No {key} BPM found"
 
         dits = [f["DIT"] for f in self.file_dict[key].values()]
+
         assert True in np.isclose(science_dit, dits, 1e-2), "No matching DIT found"
+
         ind_dit = list(np.isclose(science_dit, dits, 1e-2)).index(True)
 
         return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
@@ -3282,13 +3291,14 @@ class Pipeline:
         assert key in self.file_dict, f"No {key} found"
 
         if key_type is not None:
-            keys = list(
-                self.file_dict[key].keys()
-            )  # Paths to each file (we want the FPET one)
-            available_keys = [
-                x.split("/")[-2].split("_")[-1] for x in keys
-            ]  # Usually ['flat', 'fpet', 'calib']
+            # Paths to each file (FPET is required)
+            keys = list(self.file_dict[key].keys())
+
+            # Usually ['flat', 'fpet', 'calib']
+            available_keys = [x.split("/")[-2].split("_")[-1] for x in keys]
+
             assert key_type in available_keys, f"No `{key}` file found"
+
             return keys[available_keys.index(key_type)]
 
         return self.file_dict[key]
@@ -3326,16 +3336,18 @@ class Pipeline:
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
         science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
-        print(science_wlen, science_dit)
 
         print(f"Number of exposures: {science_idx.size}")
 
         # Find master FLAT
         master_flat_filename, master_flat_label = self._find_master_flat()
+
         # Find dark BPM
         bpm_file = self._find_bpm(science_wlen, science_dit)
+
         # Find master DARK
         master_dark_filename = self._find_master_dark(science_dit, "CAL_DARK_MASTER")
+
         # Find wave TRACE TABLE (TW)
         wave_tw_file = self._find("UTIL_WAVE_TW", "fpet")
 
@@ -3557,18 +3569,17 @@ class Pipeline:
                     "util_calib_nodding folder."
                 )
 
-                found_calib_nodding = True
-
-                raise RuntimeError("Support for using obs_nodding on "
-                                   "util_calib_nodding is not yet "
-                                   "implemented.")
-
-            else:
-                print(
-                    "\nThe calibrated files do not exactly match "
-                    "with the raw files so will continue processing "
-                    "the raw nodding data from the 'raw' folder."
+                raise RuntimeError(
+                    "Support for using obs_nodding on "
+                    "util_calib_nodding is not yet "
+                    "implemented."
                 )
+
+            warnings.warn(
+                "\nThe calibrated files do not exactly match "
+                "with the raw files so will continue processing "
+                "the raw nodding data from the 'raw' folder."
+            )
 
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
@@ -4753,21 +4764,47 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def xcor_wavelength_solution(
+    def _xcor_wavelength_solution(
         self,
         spec: np.ndarray,
         wavel: np.ndarray,
         telluric_template: np.ndarray,
         accuracy: float = 0.002,
-        N_grid: int = 51,
+        n_grid: int = 51,
         window_length: int = 201,
-        return_cross_corr: bool = False,
-    ) -> Union[
-        Tuple[
-            np.ndarray, Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]
-        ],
-        Tuple[Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]],
+    ) -> Tuple[
+        np.ndarray, Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]
     ]:
+        """
+        Internal method for ... TODO
+
+        Parameters
+        ----------
+        spec : np.ndarray
+            TODO
+        wavel : np.ndarray
+            TODO
+        telluric_template : np.ndarray
+            TODO
+        accuracy : float
+            TODO
+        n_grid : int
+            TODO
+        window_length : int
+            TODO
+        spec : np.ndarray
+            TODO
+
+        Returns
+        -------
+        np.ndarray
+            TODO
+        tuple(float, float, float)
+            TODO
+        tuple(int, int, int)
+            TODO
+        """
+
         template_interp = interpolate.interp1d(
             telluric_template[:, 0],
             telluric_template[:, 1],
@@ -4797,7 +4834,7 @@ class Pipeline:
         da = accuracy / dlam
         db = accuracy
         dc = accuracy / dlam**2
-        N_a, N_b, N_c = N_grid, N_grid, N_grid
+        N_a, N_b, N_c = n_grid, n_grid, n_grid
 
         b_grid = np.linspace(-db * N_b / 2, db * N_b / 2, N_b)[
             :, np.newaxis, np.newaxis, np.newaxis
@@ -4831,10 +4868,8 @@ class Pipeline:
         opt_b = b_grid[opt_idx[0], 0, 0, 0]
         opt_a = a_grid[0, opt_idx[1], 0, 0]
         opt_c = c_grid[0, 0, opt_idx[2], 0]
-        if return_cross_corr:
-            return cross_corr, (opt_b, opt_a, opt_c), opt_idx
-        else:
-            return (opt_b, opt_a, opt_c), opt_idx
+
+        return cross_corr, (opt_b, opt_a, opt_c), opt_idx
 
     @typechecked
     def correct_wavelengths(
@@ -4842,7 +4877,7 @@ class Pipeline:
         nod_ab: str = "A",
         input_folder="obs_nodding",
         accuracy: float = 0.002,
-        N_grid: int = 51,
+        n_grid: int = 51,
         window_length: int = 201,
         minimum_strength: float = 0.005,
         collapse_exposures: bool = True,
@@ -4903,9 +4938,10 @@ class Pipeline:
         print("Reading telluric model spectrum...", end="", flush=True)
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
-        transm_interp = interpolate.interp1d(
-            transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
-        )
+
+        # transm_interp = interpolate.interp1d(
+        #     transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
+        # )
 
         print(" [DONE]")
 
@@ -4937,8 +4973,11 @@ class Pipeline:
 
             if create_plots:
                 data = hdu_list[f"CHIP1.INT1"].data
+
                 spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+
                 N_orders = len(spec_orders)
+
                 fig, axes = plt.subplots(
                     N_orders, 3, figsize=(9, 15), sharex=True, sharey=True
                 )
@@ -4980,14 +5019,13 @@ class Pipeline:
                                 cross_corr,
                                 (opt_b, opt_a, opt_c),
                                 opt_idx,
-                            ) = self.xcor_wavelength_solution(
+                            ) = self._xcor_wavelength_solution(
                                 tot_flux,
                                 wavel,
                                 transm_spec,
                                 accuracy,
-                                N_grid,
+                                n_grid,
                                 window_length,
-                                return_cross_corr=True,
                             )
 
                             # Save corrected wavelengths to all files for this order
@@ -5022,13 +5060,12 @@ class Pipeline:
                                 cross_corr,
                                 (opt_b, opt_a, opt_c),
                                 opt_idx,
-                            ) = self.xcor_wavelength_solution(
+                            ) = self._xcor_wavelength_solution(
                                 spec,
                                 wavel,
                                 transm_spec,
                                 accuracy,
                                 window_length,
-                                return_cross_corr=True,
                             )
                         # Plot correlation map
                         if create_plots:
@@ -5038,10 +5075,10 @@ class Pipeline:
                             plt.imshow(
                                 cross_corr[:, :, opt_idx[2]].T,
                                 extent=[
-                                    -N_grid / 2 * accuracy,
-                                    N_grid / 2 * accuracy,
-                                    1 - N_grid / 2 * accuracy / dlam,
-                                    1 + N_grid / 2 * accuracy / dlam,
+                                    -n_grid / 2 * accuracy,
+                                    n_grid / 2 * accuracy,
+                                    1 - n_grid / 2 * accuracy / dlam,
+                                    1 + n_grid / 2 * accuracy / dlam,
                                 ],
                                 origin="lower",
                                 aspect="auto",
@@ -5101,7 +5138,7 @@ class Pipeline:
         nod_ab: str = "A",
         accuracy: float = 0.002,
         window_length: int = 201,
-        N_grid: int = 51,
+        n_grid: int = 51,
         minimum_strength: float = 0.005,
         collapse_spatially: bool = True,
         collapse_exposures: bool = True,
@@ -5183,22 +5220,26 @@ class Pipeline:
             fits_files = list(self.file_dict[f"FIT_GAUSSIAN_2D_{nod_ab}"].keys())
         elif input_folder == "correct_wavelengths_2d":
             fits_files = list(self.file_dict[f"CORRECT_WAVELENGTHS_2D_{nod_ab}"].keys())
+
         path_load = self.product_folder / input_folder / f"*_{nod_ab}_*.fits"
         fits_files = sorted(glob.glob(str(path_load)))
 
         if collapse_exposures:
             tot_flux = 0
             normalization = 0
+
             for fits_file in fits_files:
                 hdu_list = fits.open(fits_file)
                 tot_flux += hdu_list["SPEC"].data / (hdu_list["ERR"].data + 1) ** 2
                 normalization += 1 / (hdu_list["ERR"].data + 1) ** 2
+
             tot_flux = tot_flux / normalization
             loop_files = fits_files[:1]
+
         else:
             loop_files = fits_files
 
-        for file_i, fits_file in enumerate(loop_files):
+        for fits_file in loop_files:
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
@@ -5254,19 +5295,19 @@ class Pipeline:
                     else:
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
                             # Calculate wavelength solution using cross-correlation
-                            cross_corr, opt_p, opt_idx = self.xcor_wavelength_solution(
+                            cross_corr, opt_p, opt_idx = self._xcor_wavelength_solution(
                                 spec,
                                 wavel,
                                 transm_spec,
                                 accuracy,
-                                N_grid,
+                                n_grid,
                                 window_length,
-                                return_cross_corr=True,
                             )
 
                             print(
-                                f"   - Detector {det_idx+1}, Order {order_idx}, Row {row} -> lambda = {opt_p[0]:.4f} "
-                                f"+ {opt_p[1]:.4f} * lambda + {opt_p[2]:.4f} * lambda^2'"
+                                f"   - Detector {det_idx+1}, Order {order_idx}, "
+                                f" Row {row} -> lambda = {opt_p[0]:.4f} + "
+                                f"{opt_p[1]:.4f} * lambda + {opt_p[2]:.4f} * lambda^2'"
                             )
 
                             mean_wavel = np.mean(wavel)
@@ -5335,6 +5376,7 @@ class Pipeline:
                                     + opt_p[1] * dwavel
                                     + opt_p[2] * dwavel**2
                                 )
+
                             else:
                                 corrected_wavel[det_idx, order_idx, row] = (
                                     mean_wavel
@@ -5350,10 +5392,10 @@ class Pipeline:
                             plt.imshow(
                                 cross_corr[:, :, opt_idx[2]].T,
                                 extent=[
-                                    -(N_grid + 1) / 2 * accuracy,
-                                    (N_grid + 1) / 2 * accuracy,
-                                    1 - (N_grid + 1) / 2 * accuracy / dlam,
-                                    1 + (N_grid + 1) / 2 * accuracy / dlam,
+                                    -(n_grid + 1) / 2 * accuracy,
+                                    (n_grid + 1) / 2 * accuracy,
+                                    1 - (n_grid + 1) / 2 * accuracy / dlam,
+                                    1 + (n_grid + 1) / 2 * accuracy / dlam,
                                 ],
                                 origin="lower",
                                 aspect="auto",
@@ -5510,7 +5552,7 @@ class Pipeline:
         self,
         nod_ab: str = "A",
         verbose: bool = True,
-        extraction_length: float = 0.056,
+        extraction_length: float = PIXEL_SCALE,
         spatial_oversampling: float = 1.0,
         use_corr_wavel: bool = True,
     ) -> None:
@@ -5737,7 +5779,7 @@ class Pipeline:
     def custom_extract_2d(
         self,
         nod_ab: str = "A",
-        spatial_sampling: float = 0.056,
+        spatial_sampling: float = PIXEL_SCALE,
         max_separation: float = 2.0,
     ) -> None:
         """
@@ -6057,7 +6099,7 @@ class Pipeline:
                 amp : float
                     Amplitude.
                 mean : float
-                    Mean 
+                    Mean
                 sigma : float
                     Standard deviation.
 
@@ -6187,7 +6229,7 @@ class Pipeline:
         nod_ab: str = "A",
         input_folder: str = "correct_wavelengths_2d",
         lp_window_length: int = 501,
-        telluric_mask=[0.4, 2.0],
+        telluric_mask: Tuple[float, float] = (0.4, 2.0),
         svd_broadening_kernel: bool = False,
     ) -> None:
         """
@@ -6209,9 +6251,9 @@ class Pipeline:
         lp_window_length : int
             Length (in spectral pixels) of the low-pass filter applied
             to the data to fit the local continuum.
-        telluric_mask : list
+        telluric_mask : tuple(float, float)
             Relative flux fraction to use as a cutoff for masking the
-            deepest tellurics. E.g. 'telluric_mask = [0.4, 2.0] will
+            deepest tellurics. E.g. 'telluric_mask = (0.4, 2.0) will
             result in all spectral bins with less than 40% or more than
             200% flux w.r.t the continuum to be masked.
         svd_broadening_kernel : bool
@@ -6446,8 +6488,8 @@ class Pipeline:
     @typechecked
     def detection_map(
         self,
-        planet_model: np.ndarray,
-        planet_model_wl: np.ndarray,
+        model_flux: np.ndarray,
+        model_wavel: np.ndarray,
         rv_grid: np.ndarray = np.linspace(-150, 150, 301),
         vsini_grid: Optional[np.ndarray] = None,
         nod_ab: str = "A",
@@ -6461,12 +6503,23 @@ class Pipeline:
 
         Parameters
         ----------
-        planet_model : np.ndarray
+        model_flux : np.ndarray
             Template used for cross-correlation
-        planet_model_wl : np.ndarray
+        model_wavel : np.ndarray
             Wavelengths corresponding to the template in nm.
         rv_grid : np.ndarray
-            Radial velocities to calculate the cross-correlation on.
+            Radial velocities (km/s) to calculate the
+            cross-correlation on.
+        vsini_grid : np.ndarray, None
+            Projected spin velocity (km/s) that is used to broaden
+            the template spectrum. No broadening is applied if the
+            argument is set to ``None``, in which case the input
+            spectrum is expected to have been broadened already.
+            The argument is an array with :math:`v\\sin\\,i` values
+            for which the cross-correlation map will be calculated.
+            For each value of :math:`v\\sin\\,i`, a subplot will be
+            created that shows the cross-correlation as function
+            of radial velocity and separation from the star.")
         nod_ab : str
             Nod position which will be cross-correlated.
         input_folder : str
@@ -6498,30 +6551,42 @@ class Pipeline:
         out_files = []
 
         betas = 1.0 - rv_grid / (const.c.value * 1e-3)
-        total_ccf = 0
+
+        if vsini_grid is None:
+            vsini_grid = np.array([None])
+            total_ccf = np.array([None])
+
+        else:
+            total_ccf = np.full(vsini_grid.size, None)
 
         @typechecked
-        def make_ccf_plot(ccf_array: np.ndarray) -> mpl.figure.Figure:
+        def _make_ccf_plot(ccf_array: List[np.ndarray]) -> mpl.figure.Figure:
             """
-            Internal method for TODO
+            Internal method for creating a plot of the detection map.
 
             Parameters
             ----------
-            ccf_array : np.ndarray
-                TODO
+            ccf_array : list(np.ndarray)
+                List with arrays that contain the cross-correlation
+                detection maps. For ``vsini_grid=None``, the list
+                contains one array. Otherwise, the list items
+                correspond to the :math:``v\\sin\\,i`` values of
+                ``vsini_grid``.
 
             Returns
             -------
             mpl.figure.Figure
-                TODO
+                Matplotlib ``Figure`` object with the detection map.
             """
 
-            fov = spec.shape[2] * 0.056 / 2
-            mask = np.abs(rv_grid) > 50
+            mask = np.abs(rv_grid) > 50.0
+
             norm_ccf = (
                 ccf_array - np.nanmedian(ccf_array[:, mask], axis=1)[:, np.newaxis]
             ) / np.nanstd(ccf_array[:, mask], axis=1)[:, np.newaxis]
+
             fig = plt.figure(figsize=(6, 4))
+
             plt.imshow(
                 norm_ccf,
                 cmap="inferno",
@@ -6530,9 +6595,97 @@ class Pipeline:
                 extent=[rv_grid.min(), rv_grid.max(), -fov, fov],
                 origin="lower",
             )
+
             plt.colorbar()
             plt.ylabel("Separation (arcsec)")
             plt.xlabel("Radial velocity (km/s)")
+
+            return fig
+
+        @typechecked
+        def _make_multi_ccf_plot(ccf_array: List[np.ndarray]) -> mpl.figure.Figure:
+            """
+            Internal method for creating a grid of plots with
+            detection maps for the :math:`v\\sin\\,i` values
+            from the ``vsini_grid``.
+
+            Parameters
+            ----------
+            ccf_array : list(np.ndarray)
+                List with arrays that contain the cross-correlation
+                detection maps. For ``vsini_grid=None``, the list
+                contains one array. Otherwise, the list items
+                correspond to the :math:``v\\sin\\,i`` values of
+                ``vsini_grid``.
+
+            Returns
+            -------
+            mpl.figure.Figure
+                Matplotlib ``Figure`` object with the detection map.
+            """
+
+            n_rows = ccf_array.size // 5 + 1
+
+            if ccf_array.size < 5:
+                n_cols = ccf_array.size
+            else:
+                n_cols = 5
+
+            fig, axs = plt.subplots(
+                nrows=n_rows, ncols=n_cols, figsize=(30, n_rows * 4), squeeze=False
+            )
+
+            count = 0
+
+            for row_idx in range(n_rows):
+                for col_idx in range(n_cols):
+                    if count < ccf_array.size:
+                        ax = axs[row_idx, col_idx]
+
+                        mask = np.abs(rv_grid) > 50.0
+
+                        norm_ccf = (
+                            ccf_array[count]
+                            - np.nanmedian(ccf_array[count][:, mask], axis=1)[
+                                :, np.newaxis
+                            ]
+                        ) / np.nanstd(ccf_array[count][:, mask], axis=1)[:, np.newaxis]
+
+                        cc_map = ax.imshow(
+                            norm_ccf,
+                            cmap="inferno",
+                            aspect="auto",
+                            interpolation="none",
+                            extent=[rv_grid.min(), rv_grid.max(), -fov, fov],
+                            origin="lower",
+                        )
+
+                        fig.colorbar(cc_map, ax=ax)
+
+                        ax.set_ylabel("Separation (arcsec)")
+                        ax.set_xlabel("Radial velocity (km/s)")
+                        ax.minorticks_on()
+
+                        ax.text(
+                            0.08,
+                            0.1,
+                            rf"$v\,\sin\,i =$ {vsini_grid[count]:.1f} km/s",
+                            ha="left",
+                            va="bottom",
+                            transform=ax.transAxes,
+                            color="white",
+                            fontsize=14.0,
+                        )
+
+                    else:
+                        # Break needed when the number of CCFs is
+                        # smaller than the number of subplots because
+                        # not a multiple of 5 subplots in a row
+                        ax = axs[row_idx, col_idx]
+                        ax.axis("off")
+
+                    count += 1
+
             return fig
 
         for fits_idx, fits_file in enumerate(fits_files):
@@ -6546,77 +6699,108 @@ class Pipeline:
             wl = hdu_list["WAVE"].data
             err = hdu_list["ERR"].data
 
-            total_ccf_exp = 0
+            fov = spec.shape[2] * PIXEL_SCALE / 2.0
 
-            if vsini_grid is None:
+            if vsini_grid.size == 1:
+                total_ccf_exp = np.array([None])
+
+            else:
+                total_ccf_exp = np.full(vsini_grid.size, None)
+
+            for vsini_idx, vsini_item in enumerate(vsini_grid):
+                if vsini_item is not None:
+                    if vsini_item > 0.0:
+                        broad_flux = fastRotBroad(
+                            model_wavel, np.copy(model_flux), 0.0, vsini_item
+                        )
+
+                    else:
+                        broad_flux = np.copy(np.copy(model_flux))
+
                 ccfs = np.zeros(
                     (spec.shape[0], spec.shape[1], spec.shape[2], rv_grid.size)
                 )
+
+                for det_idx in np.arange(3):
+                    for order_idx, (order_spec, order_wl, order_err) in enumerate(
+                        zip(spec[det_idx], wl[det_idx], err[det_idx])
+                    ):
+                        if vsini_item is None:
+                            print(
+                                f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
+                                end="\r",
+                            )
+
+                        else:
+                            print(
+                                f"   - Processing vsin(i) = {vsini_item:.1f} "
+                                f"km/s for detector {det_idx+1} order "
+                                f"{order_idx+1}... ",
+                                end="\r",
+                            )
+
+                        waves = np.nanmedian(order_wl, axis=0)
+
+                        # Interpolate model
+
+                        shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
+
+                        if vsini_item is None:
+                            model_interp = interpolate.interp1d(model_wavel, model_flux)
+                        else:
+                            model_interp = interpolate.interp1d(model_wavel, broad_flux)
+
+                        template = model_interp(shifted_waves)
+
+                        hp_template = np.array(
+                            [
+                                util.highpass_filter(temp, hp_window_length)
+                                for temp in template
+                            ]
+                        ).T
+
+                        # Flag outliers
+
+                        order_spec = util.flag_outliers(order_spec, sigma=3)
+
+                        # Cross-correlation
+
+                        order_err[np.isnan(order_err)] = np.inf
+                        order_err[order_err == 0] = np.inf
+                        order_spec[np.isnan(order_spec)] = 0
+
+                        if error_weighted:
+                            # Clip errors at half their median
+                            order_err = np.maximum(
+                                order_err, 0.5 * np.nanmedian(order_err)
+                            )
+                            ccf = (order_spec / order_err**2).dot(hp_template)
+
+                        else:
+                            ccf = (order_spec).dot(hp_template)
+
+                        ccfs[det_idx, order_idx] = ccf
+
+                        if total_ccf_exp[vsini_idx] is None:
+                            total_ccf_exp[vsini_idx] = ccf
+                        else:
+                            total_ccf_exp[vsini_idx] += ccf
+
+                if total_ccf[vsini_idx] is None:
+                    total_ccf[vsini_idx] = total_ccf_exp[vsini_idx]
+                else:
+                    total_ccf[vsini_idx] += total_ccf_exp[vsini_idx]
+
+            if vsini_grid[0] is None:
+                _ = _make_ccf_plot(total_ccf_exp[0])
             else:
-                ccfs = np.zeros(
-                    (
-                        spec.shape[0],
-                        spec.shape[1],
-                        spec.shape[2],
-                        rv_grid.size,
-                        vsini_grid.size,
-                    )
-                )
-
-            for det_idx in np.arange(3):
-                for order_idx, (order_spec, order_wl, order_err) in enumerate(
-                    zip(spec[det_idx], wl[det_idx], err[det_idx])
-                ):
-                    print(
-                        f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
-                        end="\r",
-                    )
-
-                    waves = np.nanmedian(order_wl, axis=0)
-
-                    # Interpolate model
-
-                    shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
-
-                    template = interpolate.interp1d(planet_model_wl, planet_model)(
-                        shifted_waves
-                    )
-                    hp_template = np.array(
-                        [
-                            util.highpass_filter(temp, hp_window_length)
-                            for temp in template
-                        ]
-                    ).T
-
-                    # Flag outliers
-
-                    order_spec = util.flag_outliers(order_spec, sigma=3)
-
-                    # Cross-correlation
-
-                    order_err[np.isnan(order_err)] = np.inf
-                    order_err[order_err == 0] = np.inf
-                    order_spec[np.isnan(order_spec)] = 0
-
-                    if error_weighted:
-                        # Clip errors at half their median
-                        order_err = np.maximum(order_err, 0.5 * np.nanmedian(order_err))
-                        ccf = (order_spec / order_err**2).dot(hp_template)
-
-                    else:
-                        ccf = (order_spec).dot(hp_template)
-
-                    ccfs[det_idx, order_idx] = ccf
-                    total_ccf_exp += ccf
-
-            total_ccf += total_ccf_exp
-
-            make_ccf_plot(total_ccf_exp)
+                _ = _make_multi_ccf_plot(total_ccf_exp)
 
             plot_file = (
                 f"{self.path}/product/detection_map/ccf_"
                 + f"nod_{nod_ab}_{fits_idx:03d}.png"
             )
+
             plt.savefig(plot_file)
             plt.close()
 
@@ -6624,7 +6808,7 @@ class Pipeline:
             hdu_list.append(fits.ImageHDU(ccfs, name="CCF"))
             hdu_list.append(fits.ImageHDU(rv_grid, name="RV"))
 
-            if vsini_grid is not None:
+            if vsini_grid[0] is not None:
                 hdu_list.append(fits.ImageHDU(vsini_grid, name="VSINI"))
 
             fits_file = (
@@ -6646,11 +6830,13 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-        make_ccf_plot(total_ccf)
-        plot_file = (
-            f"{self.path}/product/detection_map/total_ccf_"
-            + f"nod_{nod_ab}_{fits_idx:03d}.png"
-        )
+        if vsini_grid[0] is None:
+            _ = _make_ccf_plot(total_ccf[0])
+        else:
+            _ = _make_multi_ccf_plot(total_ccf)
+
+        plot_file = f"{self.path}/product/detection_map/total_ccf_nod_{nod_ab}.png"
+
         plt.savefig(plot_file)
         plt.close()
 
@@ -6710,10 +6896,12 @@ class Pipeline:
                 if not os.path.isfile(fits_file):
                     corrected = False
 
-                    warnings.warn("Could not find spectra in either "
-                                  "the correct_wavelengths_2d or "
-                                  "correct_wavelengths folder so "
-                                  "setting \'corrected=False\'.")
+                    warnings.warn(
+                        "Could not find spectra in either "
+                        "the correct_wavelengths_2d or "
+                        "correct_wavelengths folder so "
+                        "setting 'corrected=False'."
+                    )
 
         if not corrected:
             fits_file = (

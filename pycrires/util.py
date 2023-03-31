@@ -210,8 +210,8 @@ def flag_outliers(
 
 
 @typechecked
-def load_BT_SETTL_template(
-    temperature: float,
+def load_bt_settl_template(
+    t_eff: float,
     log_g: float,
     vsini: Optional[float] = None,
     wl_lims: Tuple[float, float] = (0.8, 3.0),
@@ -222,7 +222,7 @@ def load_BT_SETTL_template(
 
     Parameters
     ----------
-    temperature: float
+    t_eff: float
         Effective temperature of the model to load. The grid has a
         resolution of 100 K, so will be rounded to the nearest value.
     log_g: float
@@ -245,18 +245,17 @@ def load_BT_SETTL_template(
 
     # The file names contain the main parameters of the models:
     # lte{Teff/10}-{Logg}{[M/H]}a[alpha/H].GRIDNAME.7.spec.gz/bz2/xz
-    t_val = int(np.round(temperature / 100))
-    log_g_val = 0.5 * np.round(log_g / 0.5)
-    if t_val < 12:
-        fname = "lte{0:03d}-{1:.1f}-0.0a+0.0.BT-Settl.spec.7.bz2".format(
-            t_val, log_g_val
-        )
-    else:
-        fname = "lte{0:03d}.0-{1:.1f}-0.0a+0.0.BT-Settl.spec.7.xz".format(
-            t_val, log_g_val
-        )
 
-    data_path = os.path.join(os.getcwd(), "bt_settl_data")
+    t_val = int(np.round(t_eff / 100))
+    log_g_val = 0.5 * np.round(log_g / 0.5)
+
+    if t_val < 12:
+        fname = f"lte{t_val:03d}-{log_g_val:.1f}-0.0a+0.0.BT-Settl.spec.7.bz2"
+    else:
+        fname = f"lte{t_val:03d}.0-{log_g_val:.1f}-0.0a+0.0.BT-Settl.spec.7.xz"
+
+    data_path = os.path.join(os.getcwd(), "bt_settl_spectra")
+
     if not os.path.exists(data_path):
         print("Making local data folder...")
         os.mkdir(data_path)
@@ -266,14 +265,13 @@ def load_BT_SETTL_template(
 
     if not os.path.exists(decompressed_fpath):
         if t_val < 12:
-            url = (
-                "https://phoenix.ens-lyon.fr/Grids/BT-Settl/CIFIST2011/SPECTRA/" + fname
-            )
+            url = "https://phoenix.ens-lyon.fr/Grids/" "BT-Settl/CIFIST2011/SPECTRA/"
         else:
             url = (
-                "https://phoenix.ens-lyon.fr/Grids/BT-Settl/CIFIST2011_2015/SPECTRA/"
-                + fname
+                "https://phoenix.ens-lyon.fr/Grids/" "BT-Settl/CIFIST2011_2015/SPECTRA/"
             )
+
+        url += fname
 
         print("Downloading BT-SETTL spectra from:", url)
 
@@ -289,18 +287,18 @@ def load_BT_SETTL_template(
         )
 
         if t_val < 12:
-            with open(fpath, "rb") as file:
-                data = file.read()
+            with open(fpath, "rb") as open_file:
+                data = open_file.read()
                 decompressed_data = bz2.decompress(data)
 
         else:
             decompressed_data = lzma.open(fpath).read()
 
-        with open(decompressed_fpath, "wb") as file:
-            file.write(decompressed_data)
+        with open(decompressed_fpath, "wb") as open_file:
+            open_file.write(decompressed_data)
 
-    with open(decompressed_fpath, "r", encoding="utf-8") as file:
-        data = file.readlines()
+    with open(decompressed_fpath, "r", encoding="utf-8") as open_file:
+        data = open_file.readlines()
 
     wl = np.zeros(len(data))
     flux = np.zeros(len(data))
@@ -341,8 +339,8 @@ def load_BT_SETTL_template(
     flux_even = interp1d(wl, flux)(waves_even)
 
     if vsini is not None:
-        broad_flux = fastRotBroad(waves_even, flux_even, 0.5, vsini)
+        broad_flux = fastRotBroad(waves_even, flux_even, 0.0, vsini)
     else:
         broad_flux = np.copy(flux_even)
 
-    return broad_flux, waves_even * 1000
+    return broad_flux, waves_even * 1e3

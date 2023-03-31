@@ -1,5 +1,5 @@
 from pycrires.pipeline import Pipeline
-from pycrires.util import load_BT_SETTL_template
+from pycrires.util import load_bt_settl_template
 
 __author__ = 'Tomas Stolker'
 __license__ = 'MIT'
