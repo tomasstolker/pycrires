@@ -396,10 +396,11 @@ class Pipeline:
                     decimal = len(file_tmp.split(".")[-1])
 
                     if decimal == 5:
-                        for dark_item in self.file_dict["DARK"]:
+                        for dark_item in self.file_dict["DARK"].values():
                             if float(file_tmp) == round(dark_item["DIT"], 5):
                                 file_dict["DIT"] = dark_item["DIT"]
                                 break
+
                 else:
                     file_dict["DIT"] = float(file_tmp)
 
@@ -6519,7 +6520,11 @@ class Pipeline:
             for which the cross-correlation map will be calculated.
             For each value of :math:`v\\sin\\,i`, a subplot will be
             created that shows the cross-correlation as function
-            of radial velocity and separation from the star.")
+            of radial velocity and separation from the star. When
+            using this parameter, make sure that the template of
+            ``model_flux`` has not been broadened and make sure
+            that the wavelengths of ``model_wavel`` are evenly
+            spaced.
         nod_ab : str
             Nod position which will be cross-correlated.
         input_folder : str

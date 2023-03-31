@@ -80,7 +80,7 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
                                   collapse_spatially=True, collapse_exposures=True, accuracy=0.001)
 
   pipeline.remove_starlight(nod_ab, input_folder='correct_wavelengths_2d',
-                            telluric_mask=[0.6, 1.6], svd_broadening_kernel=True)
+                            telluric_mask=(0.6, 1.6), svd_broadening_kernel=True)
 
   pipeline.remove_systematics(nod_ab, n_modes=5, input_folder='remove_starlight')
 

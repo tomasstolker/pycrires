@@ -24,7 +24,13 @@ Data reduction pipeline for VLT/CRIRES+
 .. image:: https://img.shields.io/github/license/tomasstolker/pycrires
    :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
 
-*pycrires* is a Python wrapper for running the CRIRES+ recipes of *EsoRex*. The pipeline organizes the raw data, creates SOF and configuration files for *EsoRex*, runs the calibration and science recipes, applies a telluric correction with *Molecfit*, and creates plots of the images and extracted spectra.
+*pycrires* is a Python wrapper for running the CRIRES+ recipes of *EsoRex*.
+
+The pipeline organizes the raw data, creates SOF and configuration files for *EsoRex*, runs the calibration and science recipes, improves the wavelength solution, and creates plots of the images and extracted spectra.
+
+Additionally, there are dedicated routines for the extraction, calibration, and detection of spatially-resolved objects such as directly imaged planets.
+
+For spatially resolved objects, the telluric lines can typically be corrected with the stellar spectrum. Otherwise, it is possible to use an empirical modeling approach with the recipes of *MolecFit*. The pipeline interface of *pycrires* provides functionalities for both cases.
 
 Documentation
 -------------
@@ -34,7 +40,7 @@ Documentation can be found at `http://pycrires.readthedocs.io <http://pycrires.r
 Attribution
 -----------
 
-Please cite `Stolker & Landman, 2023, ascl: 3541 <https://ascl.net/code/v/3541>`_ when *pycrires* is used in a publication.
+Please cite `Stolker & Landman, 2023, ascl: 3541 <https://ascl.net/code/v/3541>`_ when *pycrires* is used in a publication and Landman et al. (in prep.) specifically when using the dedicated routines for spatially-resolved sources.
 
 Contributing
 ------------
