@@ -84,8 +84,10 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
 
   pipeline.remove_systematics(nod_ab, n_modes=5, input_folder='remove_starlight')
 
+  model_flux, model_wavel = pycrires.load_bt_settl_template(t_eff=1500.0, log_g=4.0, vsini=10.0)
+
   pipeline.detection_map(model_flux, model_wavel, rv_grid=np.linspace(-100, 100, 201), vsini_grid=None,
-                         nod_ab=nod_ab, input_folder='remove_systematics' error_weighted=False)
+                         nod_ab=nod_ab, input_folder='remove_systematics', error_weighted=False)
 
 Or, for unresolved targets (e.g. transiting exoplanets), the 1D spectra are already extracted by the ``obs_nodding`` method so we only need to apply the additional wavelength correction:
 

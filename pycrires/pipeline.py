@@ -31,15 +31,17 @@ from matplotlib import pyplot as plt
 from PyAstronomy.pyasl import fastRotBroad
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
-from typeguard import typechecked
+from typeguard import config as typeguard_config
+from typeguard import typechecked, CollectionCheckStrategy
 
 import pycrires
 from pycrires import util
 
 
-log_book = logging.getLogger(__name__)
-
 PIXEL_SCALE = 0.056  # (arcsec)
+
+log_book = logging.getLogger(__name__)
+typeguard_config.collection_check_strategy = CollectionCheckStrategy.ALL_ITEMS
 
 
 class Pipeline:
@@ -6565,7 +6567,7 @@ class Pipeline:
             total_ccf = np.full(vsini_grid.size, None)
 
         @typechecked
-        def _make_ccf_plot(ccf_array: List[np.ndarray]) -> mpl.figure.Figure:
+        def _make_ccf_plot(ccf_array: np.ndarray) -> mpl.figure.Figure:
             """
             Internal method for creating a plot of the detection map.
 
@@ -6706,7 +6708,7 @@ class Pipeline:
 
             fov = spec.shape[2] * PIXEL_SCALE / 2.0
 
-            if vsini_grid.size == 1:
+            if vsini_grid[0] is None:
                 total_ccf_exp = np.array([None])
 
             else:
