@@ -3964,6 +3964,7 @@ class Pipeline:
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
         check_existing: bool = False,
+        unique_pairs: bool = False,
     ) -> None:
         """
         Method for running ``cr2res_obs_nodding``.
@@ -3992,6 +3993,12 @@ class Pipeline:
         check_existing : bool
             Search for existing files in the product
             folder. Avoids re-reducing existing files.
+        unique_pairs : bool
+            In case of nods with multiple but equal numbers of exposures (e.g. AABB BBAA AABB...),
+            require that each A is uniquely paired with the B that is closest in time, uniquely.
+            This will only be carried out if the numbers of nodding exposures is indeed equal.
+            In case of more irregular sequences with a (by-chance) equal number of nods
+            (e.g. AAABB BBBAA), this will not produce desireable results.
 
         Returns
         -------
@@ -4029,6 +4036,12 @@ class Pipeline:
 
         print(f"Number of exposures at nod A: {nod_a_count}")
         print(f"Number of exposures at nod B: {nod_b_count}")
+
+        if nod_a_count != nod_b_count and unique_pairs == True:
+            warnings.warn(f"Nodding counts are unequal ({nod_a_count} A vs {nod_b_count} B)."
+            "Reverting to unique_pairs = False.")
+            unique_pairs = False
+
         # Create SOF file
 
         count_exp_a = 0
@@ -4037,6 +4050,14 @@ class Pipeline:
         # Iterate over nod A exposures
         a_i_rows = self.header_data.index[nod_a_exp]
         b_i_rows = self.header_data.index[nod_b_exp]
+
+        if unique_pairs:
+            #Need a type change here for masking the indices that we have already used.
+            a_i_rows = np.array(a_i_rows)
+            b_i_rows = np.array(b_i_rows)
+            infinite_a = np.max(a_i_rows)*10
+            infinite_b = np.max(b_i_rows)*10
+
         for i_row in science_idx:
             nod_ab = self.header_data["SEQ.NODPOS"][i_row]
             if nod_ab == "A":
@@ -4059,8 +4080,13 @@ class Pipeline:
                 file_0 = self.header_data["ORIGFILE"][i_row]
                 if nod_ab == "A":
                     closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+                    if unique_pairs:#Set the index of the b_i we just used to an arbitrarily high
+                        #number so that in future iterations, it will never be selected again.
+                        b_i_rows[np.argmin(np.abs(i_row - b_i_rows))] = infinite_b
                 elif nod_ab == "B":
                     closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
+                    if unique_pairs:
+                        a_i_rows[np.argmin(np.abs(i_row - a_i_rows))] = infinite_a
                 file_1 = self.header_data["ORIGFILE"][closest_i_diffnod]
 
                 for file in [file_0, file_1]:
