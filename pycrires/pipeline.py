@@ -3995,10 +3995,11 @@ class Pipeline:
             folder. Avoids re-reducing existing files.
         unique_pairs : bool
             In case of nods with multiple but equal numbers of exposures (e.g. AABB BBAA AABB...),
-            require that each A is uniquely paired with the B that is closest in time, uniquely.
-            This will only be carried out if the numbers of nodding exposures is indeed equal.
-            In case of more irregular sequences with a (by-chance) equal number of nods
-            (e.g. AAABB BBBAA), this will not produce desireable results.
+            pair each A uniquely to each B in sequence. So the nth A goes with the nth B and the
+            nth B goes with the nth A. This will only be carried out if the numbers of nodding 
+            exposures is equal.
+
+
 
         Returns
         -------
@@ -4052,11 +4053,10 @@ class Pipeline:
         b_i_rows = self.header_data.index[nod_b_exp]
 
         if unique_pairs:
-            #Need a type change here for masking the indices that we have already used.
-            a_i_rows = np.array(a_i_rows)
-            b_i_rows = np.array(b_i_rows)
-            infinite_a = np.max(a_i_rows)*10
-            infinite_b = np.max(b_i_rows)*10
+            #We are going to count A and B frames from the beginning:
+            A_counter = 0
+            B_counter = 0
+            sequence = []
 
         for i_row in science_idx:
             nod_ab = self.header_data["SEQ.NODPOS"][i_row]
@@ -4079,14 +4079,21 @@ class Pipeline:
 
                 file_0 = self.header_data["ORIGFILE"][i_row]
                 if nod_ab == "A":
-                    closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
-                    if unique_pairs:#Set the index of the b_i we just used to an arbitrarily high
-                        #number so that in future iterations, it will never be selected again.
-                        b_i_rows[np.argmin(np.abs(i_row - b_i_rows))] = infinite_b
+                    if not unique_pairs:#This is the default.
+                        closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+                    else:
+                        closest_i_diffnod = b_i_rows[B_counter]
+                        B_counter+=1
                 elif nod_ab == "B":
-                    closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
-                    if unique_pairs:
-                        a_i_rows[np.argmin(np.abs(i_row - a_i_rows))] = infinite_a
+                    if not unique_pairs:
+                        closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
+                    else:
+                        closest_i_diffnod = a_i_rows[A_counter]
+                        A_counter+=1
+
+                if unique_pairs and verbose:#This is for printing the pairing at the end.
+                    sequence.append([i_row,closest_i_diffnod])
+
                 file_1 = self.header_data["ORIGFILE"][closest_i_diffnod]
 
                 for file in [file_0, file_1]:
@@ -4227,7 +4234,6 @@ class Pipeline:
                         "spectra in order to maintain the "
                         "spatial dimension."
                     )
-
                 if verbose:
                     stdout = None
                 else:
@@ -4369,6 +4375,15 @@ class Pipeline:
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
+
+        if unique_pairs and verbose:
+            print('These were the file IDs of the A frames:')
+            print(a_i_rows)
+            print('\n These were the file IDs of the B frames:')
+            print(b_i_rows)
+            print('\n This is how they were paired in cr2res_obs_nodding:')
+            print(sequence)
+
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
