@@ -1189,7 +1189,9 @@ class Pipeline:
     def run_skycalc(self, pwv: float = 3.5) -> None:
         """
         Method for running the Python wrapper of SkyCalc
-        (see https://skycalc-ipy.readthedocs.io).
+        (see https://skycalc-ipy.readthedocs.io). The
+        wavelengths of the SkyCalc spectrum are set to
+        vacuum wavelengths.
 
         Parameters
         ----------
@@ -1198,8 +1200,8 @@ class Pipeline:
             the telluric spectrum. This value will impact the depth
             of the telluric lines which can be seen when plotting
             the spectra with
-            :func:`~pycrires.pipeline.Pipeline.plot_spectra` while
-            setting ``telluric=True``.
+            :func:`~pycrires.pipeline.Pipeline.plot_spectra`
+            while setting ``telluric=True``.
 
         Returns
         -------
@@ -1282,6 +1284,7 @@ class Pipeline:
         sky_calc["wgrid_mode"] = "fixed_spectral_resolution"
         sky_calc["wres"] = 2e5
         sky_calc["pwv"] = pwv
+        sky_calc["vacair"] = "vac"
 
         print(f"  - Wavelength range (nm) = {sky_calc['wmin']} - {sky_calc['wmax']}")
         print(f"  - lambda / Dlambda = {sky_calc['wres']}")
@@ -3994,12 +3997,11 @@ class Pipeline:
             Search for existing files in the product
             folder. Avoids re-reducing existing files.
         unique_pairs : bool
-            In case of nods with multiple but equal numbers of exposures (e.g. AABB BBAA AABB...),
-            pair each A uniquely to each B in sequence. So the nth A goes with the nth B and the
-            nth B goes with the nth A. This will only be carried out if the numbers of nodding 
-            exposures is equal.
-
-
+            In case of nods with multiple but equal numbers of
+            exposures (e.g. AABB BBAA AABB...), pair each A uniquely
+            to each B in sequence. So the nth A goes with the nth B
+            and the nth B goes with the nth A. This will only be
+            carried out if the numbers of nodding  exposures is equal.
 
         Returns
         -------
@@ -4038,9 +4040,11 @@ class Pipeline:
         print(f"Number of exposures at nod A: {nod_a_count}")
         print(f"Number of exposures at nod B: {nod_b_count}")
 
-        if nod_a_count != nod_b_count and unique_pairs == True:
-            warnings.warn(f"Nodding counts are unequal ({nod_a_count} A vs {nod_b_count} B)."
-            "Reverting to unique_pairs = False.")
+        if nod_a_count != nod_b_count and unique_pairs is True:
+            warnings.warn(f"Nodding counts are unequal ({nod_a_count} "
+                          f"A vs {nod_b_count} B). Reverting to "
+                          "unique_pairs = False.")
+
             unique_pairs = False
 
         # Create SOF file
@@ -4053,7 +4057,7 @@ class Pipeline:
         b_i_rows = self.header_data.index[nod_b_exp]
 
         if unique_pairs:
-            #We are going to count A and B frames from the beginning:
+            # A and B frames are counted from the beginning
             A_counter = 0
             B_counter = 0
             sequence = []
@@ -4078,21 +4082,26 @@ class Pipeline:
                 sof_open = open(sof_file, "w", encoding="utf-8")
 
                 file_0 = self.header_data["ORIGFILE"][i_row]
+
                 if nod_ab == "A":
-                    if not unique_pairs:#This is the default.
+                    if not unique_pairs:
                         closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+
                     else:
                         closest_i_diffnod = b_i_rows[B_counter]
-                        B_counter+=1
+                        B_counter += 1
+
                 elif nod_ab == "B":
                     if not unique_pairs:
                         closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
+
                     else:
                         closest_i_diffnod = a_i_rows[A_counter]
-                        A_counter+=1
+                        A_counter += 1
 
-                if unique_pairs and verbose:#This is for printing the pairing at the end.
-                    sequence.append([i_row,closest_i_diffnod])
+                if unique_pairs and verbose:
+                    # This is for printing the pairing at the end
+                    sequence.append([i_row, closest_i_diffnod])
 
                 file_1 = self.header_data["ORIGFILE"][closest_i_diffnod]
 
@@ -4383,7 +4392,6 @@ class Pipeline:
             print(b_i_rows)
             print('\n This is how they were paired in cr2res_obs_nodding:')
             print(sequence)
-
 
     @typechecked
     def molecfit_input(self, nod_ab: str = "A") -> None:
@@ -4817,7 +4825,7 @@ class Pipeline:
         n_grid: int = 51,
         window_length: int = 201,
     ) -> Tuple[
-        np.ndarray, Tuple[float, float, float], Tuple[np.int64, np.int64, np.int64]
+        np.ndarray, Tuple[float, float, float], Tuple[np.int_, np.int_, np.int_]
     ]:
         """
         Internal method for ... TODO
@@ -5504,6 +5512,7 @@ class Pipeline:
             solution will be corrected.
         verbose : bool
             Print output produced by ``esorex``.
+
         Returns
         -------
         NoneType
