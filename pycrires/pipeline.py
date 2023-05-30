@@ -6,7 +6,6 @@ import glob
 import json
 import logging
 import os
-import pathlib
 import shutil
 import socket
 import subprocess
@@ -20,6 +19,7 @@ import astropy.constants as const
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
+import pooch
 import skycalc_ipy
 
 from astropy import time
@@ -28,6 +28,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
+from pathlib import Path
 from PyAstronomy.pyasl import fastRotBroad
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
@@ -79,15 +80,15 @@ class Pipeline:
         if path is None:
             path = "./"
 
-        self.path = pathlib.Path(path).resolve()
+        self.path = Path(path).resolve()
 
         print(f"Data reduction folder: {self.path}")
 
         # Create attributes with the file paths
 
-        self.header_file = pathlib.Path(self.path / "header.csv")
-        self.excel_file = pathlib.Path(self.path / "header.xlsx")
-        self.json_file = pathlib.Path(self.path / "files.json")
+        self.header_file = Path(self.path / "header.csv")
+        self.excel_file = Path(self.path / "header.xlsx")
+        self.json_file = Path(self.path / "files.json")
 
         # Read or create the CSV file with header data
 
@@ -113,28 +114,28 @@ class Pipeline:
 
         # Create directory for raw files
 
-        self.raw_folder = pathlib.Path(self.path / "raw")
+        self.raw_folder = Path(self.path / "raw")
 
         if not os.path.exists(self.raw_folder):
             os.makedirs(self.raw_folder)
 
         # Create directory for calibration files
 
-        self.calib_folder = pathlib.Path(self.path / "calib")
+        self.calib_folder = Path(self.path / "calib")
 
         if not os.path.exists(self.calib_folder):
             os.makedirs(self.calib_folder)
 
         # Create directory for product files
 
-        self.product_folder = pathlib.Path(self.path / "product")
+        self.product_folder = Path(self.path / "product")
 
         if not os.path.exists(self.product_folder):
             os.makedirs(self.product_folder)
 
         # Create directory for configuration files
 
-        self.config_folder = pathlib.Path(self.path / "config")
+        self.config_folder = Path(self.path / "config")
 
         if not os.path.exists(self.config_folder):
             os.makedirs(self.config_folder)
@@ -1012,7 +1013,7 @@ class Pipeline:
 
         self._print_section("Renaming files")
 
-        raw_files = sorted(pathlib.Path(self.path / "raw").glob("*.fits"))
+        raw_files = sorted(Path(self.path / "raw").glob("*.fits"))
 
         n_total = 0
         n_renamed = 0
@@ -1097,7 +1098,7 @@ class Pipeline:
         key_file = os.path.dirname(__file__) + "/keywords.txt"
         keywords = np.genfromtxt(key_file, dtype="str", delimiter=",")
 
-        raw_files = pathlib.Path(self.path / "raw").glob("*.fits")
+        raw_files = Path(self.path / "raw").glob("*.fits")
 
         header_dict = {}
         for key_item in keywords:
@@ -1395,7 +1396,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(output_dir / "files.sof")
+        sof_file = Path(output_dir / "files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             for item in self.header_data[indices]["ORIGFILE"]:
@@ -1442,7 +1443,7 @@ class Pipeline:
 
         print("Output files:")
 
-        fits_files = pathlib.Path(self.path / "calib/cal_dark").glob(
+        fits_files = Path(self.path / "calib/cal_dark").glob(
             "cr2res_cal_dark_*master.fits"
         )
 
@@ -1451,7 +1452,7 @@ class Pipeline:
 
         # Update file dictionary with bad pixel map
 
-        fits_files = pathlib.Path(self.path / "calib/cal_dark").glob(
+        fits_files = Path(self.path / "calib/cal_dark").glob(
             "cr2res_cal_dark_*bpm.fits"
         )
 
@@ -1530,7 +1531,7 @@ class Pipeline:
         for dit_item in unique_dit:
             print(f"Creating SOF file for DIT={dit_item}:")
 
-            sof_file = pathlib.Path(self.path / "calib/cal_flat/files.sof")
+            sof_file = Path(self.path / "calib/cal_flat/files.sof")
 
             with open(sof_file, "w", encoding="utf-8") as sof_open:
                 for item in self.header_data[indices]["ORIGFILE"]:
@@ -1614,7 +1615,7 @@ class Pipeline:
 
             print("Output files:")
 
-            fits_files = pathlib.Path(self.path / "calib").glob(
+            fits_files = Path(self.path / "calib").glob(
                 "cr2res_cal_flat_*master_flat.fits"
             )
 
@@ -1623,7 +1624,7 @@ class Pipeline:
 
             # Update file dictionary with TraceWave table
 
-            fits_files = pathlib.Path(self.path / "calib").glob(
+            fits_files = Path(self.path / "calib").glob(
                 "cr2res_cal_flat_*tw.fits"
             )
 
@@ -1683,7 +1684,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(output_dir / "files.sof")
+        sof_file = Path(output_dir / "files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             for item in self.header_data[indices]["ORIGFILE"]:
@@ -1779,7 +1780,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / "calib/cal_wave/files.sof")
+        sof_file = Path(self.path / "calib/cal_wave/files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             # Uranium-Neon lamp (UNE) frames
@@ -2053,7 +2054,7 @@ class Pipeline:
 
         print(f"Creating SOF file for DIT={dit_item}:")
 
-        sof_file = pathlib.Path(self.path / f"calib/util_calib_{calib_type}/files.sof")
+        sof_file = Path(self.path / f"calib/util_calib_{calib_type}/files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             for item in self.header_data[indices]["ORIGFILE"]:
@@ -2262,7 +2263,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / "calib/util_trace/files.sof")
+        sof_file = Path(self.path / "calib/util_trace/files.sof")
 
         # Find UTIL_CALIB file
 
@@ -2383,7 +2384,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / "calib/util_slit_curv/files.sof")
+        sof_file = Path(self.path / "calib/util_slit_curv/files.sof")
 
         # Find Fabry Pérot Etalon (FPET) files
 
@@ -2533,7 +2534,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(
+        sof_file = Path(
             self.path / f"calib/util_extract_{calib_type}/files.sof"
         )
 
@@ -2715,7 +2716,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / "calib/util_normflat/files.sof")
+        sof_file = self.path / "calib/util_normflat/files.sof"
 
         # Find UTIL_CALIB file
 
@@ -2810,7 +2811,8 @@ class Pipeline:
     @typechecked
     def util_genlines(self, verbose: bool = True) -> None:
         """
-        Method for running ``cr2res_util_genlines``.
+        Method for running ``cr2res_util_genlines``. Generate
+        spectrum calibration FITS tables.
 
         Parameters
         ----------
@@ -2834,25 +2836,66 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        # Check if folder with calibration data can be found
+
+        cr2re_data = None
+        esorex_path = shutil.which("esorex")
+
+        if esorex_path is not None:
+            data_static = Path(esorex_path[:-10] + "share/esopipes/datastatic")
+
+            if data_static.is_dir():
+                if data_static.glob("cr2re-*"):
+                    cr2re_folder = list(data_static.glob("cr2re-*"))[0]
+                    cr2re_data = glob.glob(f"{cr2re_folder}/*")
+
         # Table with emission lines
         # Y/J -> lines_u_sarmiento.txt
         # H/K -> lines_u_redman.txt
         # L/M -> lines_thar.txt
 
-        code_dir = os.path.dirname(os.path.realpath(__file__))
+        code_dir = Path(__file__).parent
 
         indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
         wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
 
-        if wavel_set[0] in ["Y", "J"]:
-            line_file = code_dir + "/calib_data/lines_u_sarmiento.txt"
+        file_found = False
 
-        elif wavel_set[0] in ["H", "K"]:
-            line_file = code_dir + "/calib_data/lines_u_redman.txt"
+        if wavel_set[0] in ["Y", "J", "H", "K"]:
+            if wavel_set[0] in ["Y", "J"]:
+                file_tag = "lines_u_sarmiento"
+
+            elif wavel_set[0] in ["H", "K"]:
+                file_tag = "lines_u_redman"
+
+            if cr2re_data is not None:
+                line_file = cr2re_folder / f"{file_tag}.fits"
+                if os.path.exists(line_file):
+                    file_found = True
+
+            if not file_found:
+                url = f"https://home.strw.leidenuniv.nl/~stolker/pycrires/{file_tag}.fits"
+                line_file = output_dir / f"{file_tag}.fits"
+
+                if not os.path.exists(line_file):
+                    pooch.retrieve(
+                        url=url,
+                        known_hash=None,
+                        fname=f"{file_tag}.fits",
+                        path=output_dir,
+                        progressbar=True,
+                    )
+
+                file_found = True
+
+            if not file_found:
+                line_file = code_dir / f"calib_data/{file_tag}.txt"
 
         elif wavel_set[0] in ["L", "M"]:
-            line_file = code_dir + "/calib_data/lines_thar.txt"
+            # TODO Is this correct?
+            # Not sure anymore where I got this file from
+            line_file = code_dir / "calib_data/lines_thar.txt"
 
         else:
             raise RuntimeError(
@@ -2863,20 +2906,29 @@ class Pipeline:
 
         # Table with wavelength ranges
 
-        range_file = code_dir + f"/calib_data/{wavel_set}.dat"
+        if line_file.suffix == (".fits"):
+            line_data = fits.getdata(line_file, hdu=1)
+            line_data = np.column_stack([line_data['Wavelength'], line_data['Emission']])
+
+            line_file = output_dir / line_file.with_suffix(".dat").name
+
+            header = "Wavelength (nm) - Emission"
+            np.savetxt(line_file, line_data, header=header)
+
+        range_file = code_dir / f"calib_data/{wavel_set}.dat"
 
         # Create SOF file
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / "calib/util_genlines/files.sof")
+        sof_file = self.path / "calib/util_genlines/files.sof"
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             sof_open.write(f"{line_file} EMISSION_LINES_TXT\n")
-            self._update_files("EMISSION_LINES_TXT", line_file)
+            self._update_files("EMISSION_LINES_TXT", str(line_file))
 
             sof_open.write(f"{range_file} LINES_SELECTION_TXT\n")
-            self._update_files("LINES_SELECTION_TXT", range_file)
+            self._update_files("LINES_SELECTION_TXT", str(range_file))
 
         # Create EsoRex configuration file if not found
 
@@ -2911,20 +2963,14 @@ class Pipeline:
 
         print("Output files:")
 
-        fits_file = (
-            str(output_dir) + "/" + line_file.split("/")[-1].replace(".txt", ".fits")
-        )
-        self._update_files("EMISSION_LINES", fits_file)
+        fits_file = output_dir / line_file.with_suffix('.fits').name
+        self._update_files("EMISSION_LINES", str(fits_file))
 
         indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
         wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
 
-        fits_file = (
-            str(output_dir)
-            + "/"
-            + line_file.split("/")[-1].replace(".txt", f"_{wlen_id}.fits")
-        )
-        self._update_files("EMISSION_LINES", fits_file)
+        fits_file = output_dir / line_file.with_name(line_file.stem + f"_{wlen_id}").with_suffix(".fits").name
+        self._update_files("EMISSION_LINES", str(fits_file))
 
         # Write updated dictionary to JSON file
 
@@ -2979,7 +3025,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(self.path / f"calib/util_wave_{calib_type}/files.sof")
+        sof_file = Path(self.path / f"calib/util_wave_{calib_type}/files.sof")
 
         # Find EMISSION_LINES file
 
@@ -3376,7 +3422,7 @@ class Pipeline:
                 continue
 
             # Create SOF file **for each frame**
-            sof_file = pathlib.Path(output_dir / f"stare_{i+1:03d}.sof")
+            sof_file = Path(output_dir / f"stare_{i+1:03d}.sof")
             sof_open = open(sof_file, "w", encoding="utf-8")
             file_0 = self.header_data["ORIGFILE"][i_row]
             file_path_0 = f"{self.path}/raw/{file_0}"
@@ -3427,7 +3473,7 @@ class Pipeline:
             }
 
             for key, value in key_labels.items():
-                file = pathlib.Path(output_dir / f"cr2res_obs_staring_{key}.fits")
+                file = Path(output_dir / f"cr2res_obs_staring_{key}.fits")
                 new_file = file.parent / f"cr2res_obs_staring_{key}_{i+1:03d}.fits"
                 file.rename(new_file)
 
@@ -3589,7 +3635,7 @@ class Pipeline:
 
         # Iterate over nod A exposures
         for i_row in self.header_data.index[nod_a_exp]:
-            output_file = pathlib.Path(
+            output_file = Path(
                 output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
             )
             if check_existing and os.path.exists(output_file):
@@ -3601,7 +3647,7 @@ class Pipeline:
             print(
                 f"\nCreating SOF file for nod pair #{count_exp+1}/{indices.sum()//2}:"
             )
-            sof_file = pathlib.Path(output_dir / f"files_{count_exp:03d}.sof")
+            sof_file = Path(output_dir / f"files_{count_exp:03d}.sof")
 
             sof_open = open(sof_file, "w", encoding="utf-8")
 
@@ -3716,6 +3762,39 @@ class Pipeline:
                             )
                             sof_open.write(f"{key} UTIL_WAVE_TW\n")
                             file_found = True
+
+            if not file_found:
+                esorex_path = shutil.which("esorex")
+
+                if esorex_path is not None:
+                    data_static = esorex_path[:-10] + "share/esopipes/datastatic"
+
+                    if glob.glob(f"{data_static}/cr2re-*"):
+                        cr2re_folder = glob.glob(f"{data_static}/cr2re-*")[0]
+                        cr2re_data = sorted(glob.glob(f"{cr2re_folder}/*"))
+                        tw_file = f"{cr2re_folder}/{science_wlen}_tw.fits"
+
+                        if os.path.exists(tw_file):
+                            print(f"   - {tw_file} UTIL_WAVE_TW")
+                            sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
+                            file_found = True
+
+            if not file_found:
+                url = f"https://home.strw.leidenuniv.nl/~stolker/pycrires/{science_wlen}_tw.fits"
+                tw_file = f"{output_dir}/{science_wlen}_tw.fits"
+
+                if not os.path.exists(tw_file):
+                    pooch.retrieve(
+                        url=url,
+                        known_hash=None,
+                        fname=f"{science_wlen}_tw.fits",
+                        path=output_dir,
+                        progressbar=True,
+                    )
+
+                print(f"   - product/obs_nodding/{science_wlen}_tw.fits UTIL_WAVE_TW")
+                sof_open.write(f"{tw_file} UTIL_WAVE_TW\n")
+                file_found = True
 
             # if "CAL_WAVE_TW" in self.file_dict:
             #     for key in self.file_dict["CAL_WAVE_TW"]:
@@ -3851,17 +3930,17 @@ class Pipeline:
 
                 print()
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_extractedA.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_extractedA_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_extractedB.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(
+            spec_file = Path(
                 output_dir / "cr2res_obs_nodding_extracted_combined.fits"
             )
             spec_file.rename(
@@ -3869,44 +3948,44 @@ class Pipeline:
                 / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_combinedA.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_combinedA_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_combinedB.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_combinedB_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelA.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_modelA.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_modelA_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_modelB.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_modelB.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_modelB_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_slitfuncA.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_slitfuncA_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
+            spec_file = Path(output_dir / "cr2res_obs_nodding_slitfuncB.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(
+            spec_file = Path(
                 output_dir / "cr2res_obs_nodding_trace_wave_A.fits"
             )
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits"
             )
 
-            spec_file = pathlib.Path(
+            spec_file = Path(
                 output_dir / "cr2res_obs_nodding_trace_wave_B.fits"
             )
             spec_file.rename(
@@ -4068,14 +4147,14 @@ class Pipeline:
                 count_exp = count_exp_a
             else:
                 count_exp = count_exp_b
-            output_file = pathlib.Path(
+            output_file = Path(
                 output_dir / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits"
             )
             if check_existing and os.path.exists(output_file):
                 print(f"Already reduced file {output_file}")
             else:
                 print(f"\nCreating SOF file for {output_file}:")
-                sof_file = pathlib.Path(
+                sof_file = Path(
                     output_dir / f"files_{count_exp:03d}_{nod_ab}.sof"
                 )
 
@@ -4299,7 +4378,7 @@ class Pipeline:
 
                     print()
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / f"cr2res_obs_nodding_extracted{nod_ab}.fits"
                 )
                 spec_file.rename(
@@ -4307,7 +4386,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_extracted{nod_ab}_{count_exp:03d}.fits"
                 )
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / "cr2res_obs_nodding_extracted_combined.fits"
                 )
                 spec_file.rename(
@@ -4315,7 +4394,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
                 )
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / f"cr2res_obs_nodding_combined{nod_ab}.fits"
                 )
                 spec_file.rename(
@@ -4323,7 +4402,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits"
                 )
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / f"cr2res_obs_nodding_model{nod_ab}.fits"
                 )
                 spec_file.rename(
@@ -4331,7 +4410,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_model{nod_ab}_{count_exp:03d}.fits"
                 )
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / f"cr2res_obs_nodding_slitfunc{nod_ab}.fits"
                 )
                 spec_file.rename(
@@ -4339,7 +4418,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_slitfunc{nod_ab}_{count_exp:03d}.fits"
                 )
 
-                spec_file = pathlib.Path(
+                spec_file = Path(
                     output_dir / f"cr2res_obs_nodding_trace_wave_{nod_ab}.fits"
                 )
                 spec_file.rename(
@@ -4574,7 +4653,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(output_dir / "files.sof")
+        sof_file = Path(output_dir / "files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
@@ -4664,7 +4743,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(output_dir / "files.sof")
+        sof_file = Path(output_dir / "files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
@@ -4765,7 +4844,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = pathlib.Path(output_dir / "files.sof")
+        sof_file = Path(output_dir / "files.sof")
 
         with open(sof_file, "w", encoding="utf-8") as sof_open:
             print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
@@ -5083,7 +5162,7 @@ class Pipeline:
                             # Save corrected wavelengths to all files for this order
                             for save_file in fits_files:
                                 out_file = output_dir / (
-                                    pathlib.Path(save_file).stem + "_corr.fits"
+                                    Path(save_file).stem + "_corr.fits"
                                 )
                                 if i_det == 0 and order == 0:
                                     save_hdu_list = fits.open(save_file)
@@ -5159,7 +5238,7 @@ class Pipeline:
 
             # Write the corrected spectra to a new FITS file
             if not collapse_exposures:
-                out_file = output_dir / (pathlib.Path(fits_file).stem + "_corr.fits")
+                out_file = output_dir / (Path(fits_file).stem + "_corr.fits")
                 print(f"\nStoring corrected spectra: {out_file}")
 
                 hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
@@ -5370,7 +5449,7 @@ class Pipeline:
                                 # Save corrected wavelengths to all files for this order
                                 for save_file in fits_files:
                                     out_file = output_dir / (
-                                        pathlib.Path(save_file).stem.replace(
+                                        Path(save_file).stem.replace(
                                             "_corr", ""
                                         )
                                         + "_corr.fits"
@@ -5399,7 +5478,7 @@ class Pipeline:
                                 # Save corrected wavelengths to all files for this order
                                 for save_file in fits_files:
                                     out_file = output_dir / (
-                                        pathlib.Path(save_file).stem + "_corr.fits"
+                                        Path(save_file).stem + "_corr.fits"
                                     )
                                     if det_idx == 0 and order_idx == 0:
                                         save_hdu_list = fits.open(save_file)
@@ -5549,7 +5628,7 @@ class Pipeline:
             )
 
             # Prepare SOF file
-            sof_file = pathlib.Path(
+            sof_file = Path(
                 self.product_folder
                 / "util_extract_science"
                 / f"files_{count_exp:03d}.sof"
@@ -5675,7 +5754,7 @@ class Pipeline:
             )
 
             # Prepare SOF file
-            sof_file = pathlib.Path(
+            sof_file = Path(
                 self.product_folder / "util_extract_2d" / f"files_{count_exp:03d}.sof"
             )
             with open(sof_file, "w", encoding="utf-8") as sof_open:
@@ -6110,12 +6189,12 @@ class Pipeline:
         )
 
         input_folder = self.product_folder / extraction_input
-        fits_files = pathlib.Path(input_folder).glob(
+        fits_files = Path(input_folder).glob(
             f"cr2res_combined{nod_ab}_*_extr2d.fits"
         )
         n_exp = len(
             list(
-                pathlib.Path(input_folder).glob(
+                Path(input_folder).glob(
                     f"cr2res_combined{nod_ab}_*_extr2d.fits"
                 )
             )
@@ -6943,7 +7022,7 @@ class Pipeline:
                 + "center_corr.fits"
             )
 
-            if not os.path.isfile(fits_file):
+            if not os.path.exists(fits_file):
                 fits_file = (
                     f"{self.path}/product/correct_wavelengths/"
                     + f"cr2res_obs_nodding_extracted{nod_ab}_"
@@ -7131,7 +7210,7 @@ class Pipeline:
                     + f"{nod_ab}_{count:03d}.fits"
                 )
 
-            if not pathlib.Path(fits_file).exists():
+            if not Path(fits_file).exists():
                 break
 
             file_name = fits_file.split("/")[-2:]
