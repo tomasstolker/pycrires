@@ -133,12 +133,12 @@ def fit_svd_kernel(
 
      Parameters
      ----------
-      order_flux: np.ndarray
+     order_flux : np.ndarray
          2D spectrum (N_rows, N_wavelengths) to apply the masking to.
      order_wl : np.ndarray
          2D array (N_rows, N_wavelengths) corresponding to the
          wavelength at each bin.
-    star_model : np.ndarray
+     star_model : np.ndarray
          2D array (N_rows, N_wavelengths) with the estimated stellar
          contribution to each row.
      max_shift : int
@@ -149,7 +149,7 @@ def fit_svd_kernel(
 
      Returns
      -------
-     result: np.ndarray
+     result : np.ndarray
          2D array (N_rows, N_wavelengths) with the stellar
          contribution to each row corrected for the local line spread
          function.
@@ -169,8 +169,7 @@ def fit_svd_kernel(
         proj_matrix = np.linalg.pinv(modes, rcond=rcond)
         spec[np.isnan(spec)] = 0
         amps = proj_matrix.T.dot(spec)
-        reconstructed = amps.dot(modes)
-        result[i] = reconstructed
+        result[i] = amps.dot(modes)
 
     return result
 

@@ -6628,7 +6628,7 @@ class Pipeline:
         input_folder: str = "remove_systematics",
         hp_window_length: int = 501,
         error_weighted: bool = False,
-    ) -> None:
+    ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
         Method for cross-correlating each row with a model
         template.
@@ -6671,8 +6671,16 @@ class Pipeline:
 
         Returns
         -------
-        NoneType
-            None
+        list(np.ndarray)
+            List with the cross-correlation arrays. The number of
+            arrays in the list is equal to the size of the
+            ``vsini_grid``.
+        np.ndarray
+            Array with the radial velocities (km/s) that are used
+            for the cross-correlation.
+        float
+            Field of view (arcsec) along the spatial dimension that
+            is tested with the cross-correlation.
         """
 
         self._print_section("Detection map")
@@ -6975,6 +6983,8 @@ class Pipeline:
 
         plt.savefig(plot_file)
         plt.close()
+
+        return total_ccf, rv_grid, fov
 
     @typechecked
     def plot_spectra(

@@ -9,6 +9,9 @@ Data reduction pipeline for VLT/CRIRES+
 .. image:: https://img.shields.io/pypi/pyversions/pycrires
    :target: https://pypi.python.org/pypi/pycrires
 
+.. image:: https://img.shields.io/badge/ascl-2307.040-blue.svg?colorB=262255
+   :target: https://ascl.net/2307.040
+
 .. image:: https://github.com/tomasstolker/pycrires/workflows/CI/badge.svg?branch=main
    :target: https://github.com/tomasstolker/pycrires/actions
 
@@ -40,7 +43,7 @@ Documentation can be found at `http://pycrires.readthedocs.io <http://pycrires.r
 Attribution
 -----------
 
-Please cite `Stolker & Landman, 2023, ascl: 3541 <https://ascl.net/code/v/3541>`_ when *pycrires* is used in a publication and Landman et al. (in prep.) specifically when using the dedicated routines for spatially-resolved sources.
+Please cite `Stolker & Landman (2023) <https://ui.adsabs.harvard.edu/abs/2023ascl.soft07040S/abstract>`_ when *pycrires* is used in a publication and Landman et al. (in prep.) specifically when using the dedicated routines for spatially-resolved sources.
 
 Contributing
 ------------

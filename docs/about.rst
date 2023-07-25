@@ -8,6 +8,11 @@ Contact
 
 *pycrires* has been developed by Tomas Stolker (stolker@strw.leidenuniv.nl) and Rico Landman (rlandman@strw.leidenuniv.nl). Feel free to send an email for questions, comments, or suggestions.
 
+Attribution
+-----------
+
+Please cite `Stolker & Landman (2023) <https://ui.adsabs.harvard.edu/abs/2023ascl.soft07040S/abstract>`_ when *pycrires* is used in a publication and Landman et al. (in prep.) specifically when using the dedicated routines for spatially-resolved sources.
+
 Contributing
 ------------
 
