@@ -1,9 +1,9 @@
-jinja2==2.11.3
-markupsafe==2.0.1
+jinja2
+markupsafe
 jupyter
 nbconvert
 nbsphinx
 pandoc
-pydata-sphinx-theme<=0.13.1
+pydata-sphinx-theme
 sphinx-automodapi
 sphinx_book_theme
