@@ -1,5 +1,3 @@
-jinja2
-markupsafe
 jupyter
 nbconvert
 nbsphinx

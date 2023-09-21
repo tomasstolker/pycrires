@@ -40,6 +40,7 @@ clean:
 	rm -rf pycrires.egg-info/
 	rm -rf htmlcov/
 	rm -rf .tox/
+	rm -rf .pytest_cache/
 	rm -f docs/files.json
 	rm -f docs/header.csv
 	rm -f docs/header.xlsx

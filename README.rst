@@ -9,9 +9,6 @@ Data reduction pipeline for VLT/CRIRES+
 .. image:: https://img.shields.io/pypi/pyversions/pycrires
    :target: https://pypi.python.org/pypi/pycrires
 
-.. image:: https://img.shields.io/badge/ascl-2307.040-blue.svg?colorB=262255
-   :target: https://ascl.net/2307.040
-
 .. image:: https://github.com/tomasstolker/pycrires/workflows/CI/badge.svg?branch=main
    :target: https://github.com/tomasstolker/pycrires/actions
 
