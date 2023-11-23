@@ -4,7 +4,6 @@ Module with the pipeline functionalities of ``pycrires``.
 
 import glob
 import json
-import logging
 import os
 import shutil
 import socket
@@ -32,8 +31,10 @@ from pathlib import Path
 from PyAstronomy.pyasl import fastRotBroad
 from scipy import interpolate, ndimage, optimize, signal
 from skimage.restoration import inpaint
-from typeguard import config as typeguard_config
-from typeguard import typechecked, CollectionCheckStrategy
+from typeguard import typechecked
+
+# from typeguard import config as typeguard_config
+# from typeguard import CollectionCheckStrategy, typechecked
 
 import pycrires
 from pycrires import util
@@ -41,8 +42,7 @@ from pycrires import util
 
 PIXEL_SCALE = 0.056  # (arcsec)
 
-log_book = logging.getLogger(__name__)
-typeguard_config.collection_check_strategy = CollectionCheckStrategy.ALL_ITEMS
+# typeguard_config.collection_check_strategy = CollectionCheckStrategy.ALL_ITEMS
 
 
 class Pipeline:
@@ -58,7 +58,7 @@ class Pipeline:
         """
         Parameters
         ----------
-        path : str
+        path : str, None
             Path of the main reduction folder. The main folder should
             contain a subfolder called ``raw`` where the raw data
             (both science and calibration) from the ESO archive are
@@ -174,12 +174,12 @@ class Pipeline:
         # Check if there is a new version available
 
         try:
-            contents = urllib.request.urlopen(
-                "https://pypi.org/pypi/pycrires/json", timeout=1.0
-            ).read()
+            pypi_url = "https://pypi.org/pypi/pycrires/json"
 
-            data = json.loads(contents)
-            latest_version = data["info"]["version"]
+            with urllib.request.urlopen(pypi_url, timeout=1.0) as open_url:
+                url_content = open_url.read()
+                url_data = json.loads(url_content)
+                latest_version = url_data["info"]["version"]
 
         except (urllib.error.URLError, socket.timeout):
             latest_version = None
@@ -1624,9 +1624,7 @@ class Pipeline:
 
             # Update file dictionary with TraceWave table
 
-            fits_files = Path(self.path / "calib").glob(
-                "cr2res_cal_flat_*tw.fits"
-            )
+            fits_files = Path(self.path / "calib").glob("cr2res_cal_flat_*tw.fits")
 
             for item in fits_files:
                 self._update_files("CAL_FLAT_TW", str(item))
@@ -2534,9 +2532,7 @@ class Pipeline:
 
         print("Creating SOF file:")
 
-        sof_file = Path(
-            self.path / f"calib/util_extract_{calib_type}/files.sof"
-        )
+        sof_file = Path(self.path / f"calib/util_extract_{calib_type}/files.sof")
 
         # Find UTIL_CALIB file
 
@@ -2875,7 +2871,9 @@ class Pipeline:
                     file_found = True
 
             if not file_found:
-                url = f"https://home.strw.leidenuniv.nl/~stolker/pycrires/{file_tag}.fits"
+                url = (
+                    f"https://home.strw.leidenuniv.nl/~stolker/pycrires/{file_tag}.fits"
+                )
                 line_file = output_dir / f"{file_tag}.fits"
 
                 if not os.path.exists(line_file):
@@ -2908,7 +2906,9 @@ class Pipeline:
 
         if line_file.suffix == (".fits"):
             line_data = fits.getdata(line_file, hdu=1)
-            line_data = np.column_stack([line_data['Wavelength'], line_data['Emission']])
+            line_data = np.column_stack(
+                [line_data["Wavelength"], line_data["Emission"]]
+            )
 
             line_file = output_dir / line_file.with_suffix(".dat").name
 
@@ -2963,13 +2963,18 @@ class Pipeline:
 
         print("Output files:")
 
-        fits_file = output_dir / line_file.with_suffix('.fits').name
+        fits_file = output_dir / line_file.with_suffix(".fits").name
         self._update_files("EMISSION_LINES", str(fits_file))
 
         indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
         wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
 
-        fits_file = output_dir / line_file.with_name(line_file.stem + f"_{wlen_id}").with_suffix(".fits").name
+        fits_file = (
+            output_dir
+            / line_file.with_name(line_file.stem + f"_{wlen_id}")
+            .with_suffix(".fits")
+            .name
+        )
         self._update_files("EMISSION_LINES", str(fits_file))
 
         # Write updated dictionary to JSON file
@@ -3940,9 +3945,7 @@ class Pipeline:
                 output_dir / f"cr2res_obs_nodding_extractedB_{count_exp:03d}.fits"
             )
 
-            spec_file = Path(
-                output_dir / "cr2res_obs_nodding_extracted_combined.fits"
-            )
+            spec_file = Path(output_dir / "cr2res_obs_nodding_extracted_combined.fits")
             spec_file.rename(
                 output_dir
                 / f"cr2res_obs_nodding_extracted_combined_{count_exp:03d}.fits"
@@ -3978,16 +3981,12 @@ class Pipeline:
                 output_dir / f"cr2res_obs_nodding_slitfuncB_{count_exp:03d}.fits"
             )
 
-            spec_file = Path(
-                output_dir / "cr2res_obs_nodding_trace_wave_A.fits"
-            )
+            spec_file = Path(output_dir / "cr2res_obs_nodding_trace_wave_A.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_trace_wave_A_{count_exp:03d}.fits"
             )
 
-            spec_file = Path(
-                output_dir / "cr2res_obs_nodding_trace_wave_B.fits"
-            )
+            spec_file = Path(output_dir / "cr2res_obs_nodding_trace_wave_B.fits")
             spec_file.rename(
                 output_dir / f"cr2res_obs_nodding_trace_wave_B_{count_exp:03d}.fits"
             )
@@ -4120,9 +4119,11 @@ class Pipeline:
         print(f"Number of exposures at nod B: {nod_b_count}")
 
         if nod_a_count != nod_b_count and unique_pairs is True:
-            warnings.warn(f"Nodding counts are unequal ({nod_a_count} "
-                          f"A vs {nod_b_count} B). Reverting to "
-                          "unique_pairs = False.")
+            warnings.warn(
+                f"Nodding counts are unequal ({nod_a_count} "
+                f"A vs {nod_b_count} B). Reverting to "
+                "unique_pairs = False."
+            )
 
             unique_pairs = False
 
@@ -4154,9 +4155,7 @@ class Pipeline:
                 print(f"Already reduced file {output_file}")
             else:
                 print(f"\nCreating SOF file for {output_file}:")
-                sof_file = Path(
-                    output_dir / f"files_{count_exp:03d}_{nod_ab}.sof"
-                )
+                sof_file = Path(output_dir / f"files_{count_exp:03d}_{nod_ab}.sof")
 
                 sof_open = open(sof_file, "w", encoding="utf-8")
 
@@ -4164,7 +4163,9 @@ class Pipeline:
 
                 if nod_ab == "A":
                     if not unique_pairs:
-                        closest_i_diffnod = b_i_rows[np.argmin(np.abs(i_row - b_i_rows))]
+                        closest_i_diffnod = b_i_rows[
+                            np.argmin(np.abs(i_row - b_i_rows))
+                        ]
 
                     else:
                         closest_i_diffnod = b_i_rows[B_counter]
@@ -4172,7 +4173,9 @@ class Pipeline:
 
                 elif nod_ab == "B":
                     if not unique_pairs:
-                        closest_i_diffnod = a_i_rows[np.argmin(np.abs(i_row - a_i_rows))]
+                        closest_i_diffnod = a_i_rows[
+                            np.argmin(np.abs(i_row - a_i_rows))
+                        ]
 
                     else:
                         closest_i_diffnod = a_i_rows[A_counter]
@@ -4402,9 +4405,7 @@ class Pipeline:
                     / f"cr2res_obs_nodding_combined{nod_ab}_{count_exp:03d}.fits"
                 )
 
-                spec_file = Path(
-                    output_dir / f"cr2res_obs_nodding_model{nod_ab}.fits"
-                )
+                spec_file = Path(output_dir / f"cr2res_obs_nodding_model{nod_ab}.fits")
                 spec_file.rename(
                     output_dir
                     / f"cr2res_obs_nodding_model{nod_ab}_{count_exp:03d}.fits"
@@ -4465,11 +4466,11 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
         if unique_pairs and verbose:
-            print('These were the file IDs of the A frames:')
+            print("These were the file IDs of the A frames:")
             print(a_i_rows)
-            print('\n These were the file IDs of the B frames:')
+            print("\n These were the file IDs of the B frames:")
             print(b_i_rows)
-            print('\n This is how they were paired in cr2res_obs_nodding:')
+            print("\n This is how they were paired in cr2res_obs_nodding:")
             print(sequence)
 
     @typechecked
@@ -5449,9 +5450,7 @@ class Pipeline:
                                 # Save corrected wavelengths to all files for this order
                                 for save_file in fits_files:
                                     out_file = output_dir / (
-                                        Path(save_file).stem.replace(
-                                            "_corr", ""
-                                        )
+                                        Path(save_file).stem.replace("_corr", "")
                                         + "_corr.fits"
                                     )
                                     if det_idx == 0 and order_idx == 0:
@@ -6189,15 +6188,9 @@ class Pipeline:
         )
 
         input_folder = self.product_folder / extraction_input
-        fits_files = Path(input_folder).glob(
-            f"cr2res_combined{nod_ab}_*_extr2d.fits"
-        )
+        fits_files = Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")
         n_exp = len(
-            list(
-                Path(input_folder).glob(
-                    f"cr2res_combined{nod_ab}_*_extr2d.fits"
-                )
-            )
+            list(Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits"))
         )
 
         print_msg = ""

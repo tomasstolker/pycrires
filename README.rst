@@ -40,7 +40,7 @@ Documentation can be found at `http://pycrires.readthedocs.io <http://pycrires.r
 Attribution
 -----------
 
-Please cite `Stolker & Landman (2023) <https://ui.adsabs.harvard.edu/abs/2023ascl.soft07040S/abstract>`_ when *pycrires* is used in a publication and Landman et al. (in prep.) specifically when using the dedicated routines for spatially-resolved sources.
+Please cite `Stolker & Landman (2023) <https://ui.adsabs.harvard.edu/abs/2023ascl.soft07040S/abstract>`_ when *pycrires* is used in a publication and `Landman et al. (2023) <https://arxiv.org/abs/2311.13527>`_  specifically when using the dedicated routines for spatially-resolved sources.
 
 Contributing
 ------------
