@@ -911,7 +911,7 @@ class Pipeline:
         x_range = np.arange(2048)
 
         for file_item in self.header_data[indices]["ORIGFILE"]:
-            print(f"   - raw/{file_item[:-5]}_trace.png")
+            print(f"   - calib/util_trace/{file_item[:-5]}_trace.png")
 
             with fits.open(f"{self.path}/raw/{file_item}") as hdu_list:
                 plt.figure(figsize=(10, 3.5))
@@ -996,7 +996,7 @@ class Pipeline:
                 )
 
                 plt.tight_layout()
-                plt.savefig(f"{self.path}/raw/{file_item[:-5]}_trace.png", dpi=300)
+                plt.savefig(f"{self.path}/calib/util_trace/{file_item[:-5]}_trace.png", dpi=300)
                 plt.clf()
                 plt.close()
 
