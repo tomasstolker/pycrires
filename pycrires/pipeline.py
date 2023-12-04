@@ -1469,7 +1469,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cal_flat(self, verbose: bool = True) -> None:
+    def cal_flat(self, setting: str = None, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_cal_flat``.
 
@@ -1523,8 +1523,11 @@ class Pipeline:
 
         # Wavelength setting
 
-        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
-        wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        if setting is None:
+            science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+            wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        else:
+            wlen_id = setting
 
         # Iterate over different DIT values for FLAT
 
@@ -1941,7 +1944,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_calib(self, calib_type: str, verbose: bool = True) -> None:
+    def util_calib(self, calib_type: str, setting: str = None, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_util_calib``.
 
@@ -2047,8 +2050,11 @@ class Pipeline:
 
             dit_item = float(dit_item)
 
-        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
-        wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        if setting is None:
+            science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+            wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
+        else:
+            wlen_id = setting
 
         print(f"Creating SOF file for DIT={dit_item}:")
 
@@ -2805,7 +2811,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_genlines(self, verbose: bool = True) -> None:
+    def util_genlines(self, setting: str = None, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_util_genlines``. Generate
         spectrum calibration FITS tables.
@@ -2852,9 +2858,11 @@ class Pipeline:
 
         code_dir = Path(__file__).parent
 
-        indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
-
-        wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
+        if setting is None:
+            indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+            wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
+        else:
+            wavel_set = setting
 
         file_found = False
 
@@ -2966,8 +2974,11 @@ class Pipeline:
         fits_file = output_dir / line_file.with_suffix(".fits").name
         self._update_files("EMISSION_LINES", str(fits_file))
 
-        indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
-        wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
+        if setting is None:
+            indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+            wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
+        else:
+            wlen_id = setting
 
         fits_file = (
             output_dir
