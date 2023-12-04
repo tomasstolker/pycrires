@@ -54,7 +54,7 @@ class Pipeline:
     """
 
     @typechecked
-    def __init__(self, path: Optional[str] = None, setting = None) -> None:
+    def __init__(self, path: Optional[str] = None, setting: Optional[str] = None) -> None:
         """
         Parameters
         ----------
@@ -64,6 +64,13 @@ class Pipeline:
             (both science and calibration) from the ESO archive are
             stored. The current working folder is used if the arguments
             of ``path`` is set to ``None``.
+
+        setting : str, None
+            Specific spectral setting for which to process the calibrations.
+            This keyword is usefully if one just wants to create calibrations
+            without any SCIENCE frames. The default value is ``None``, in 
+            which case the spectral setting is infered from the SCIENCE 
+            frames.
 
         Returns
         -------
