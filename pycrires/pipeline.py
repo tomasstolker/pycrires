@@ -54,7 +54,7 @@ class Pipeline:
     """
 
     @typechecked
-    def __init__(self, path: Optional[str] = None) -> None:
+    def __init__(self, path: Optional[str] = None, setting = None) -> None:
         """
         Parameters
         ----------
@@ -83,6 +83,13 @@ class Pipeline:
         self.path = Path(path).resolve()
 
         print(f"Data reduction folder: {self.path}")
+
+        # manually set spectral setting
+
+        self.setting = setting
+
+        if self.setting:
+            print(f"Manually set spectral setting: {self.setting}")
 
         # Create attributes with the file paths
 
@@ -722,10 +729,17 @@ class Pipeline:
                 break
 
         if download in ["y", "Y"]:
-            indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+            if self.setting:
+                # No SCIENCE frames: we use the spectral setting provided by the user
+                indices = np.where(self.header_data["DPR.CATG"] == "CALIB")[0]
 
-            # Wavelength setting
-            wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
+                # Wavelength setting
+                wlen_id = self.setting
+            else:
+                indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+                # Wavelength setting
+                wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
 
             # Observing date
             date_obs = self.header_data["DATE-OBS"][indices[0]]
@@ -1223,6 +1237,9 @@ class Pipeline:
 
         science_index = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
+        if len(science_index) > 0:
+            raise ValueError("Cannot run skycalc: there are no SCIENCE frames")
+
         # Requested PWV for observations
 
         pwv_req = self.header_data["OBS.WATERVAPOUR"][science_index[0]]
@@ -1469,7 +1486,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cal_flat(self, setting: str = None, verbose: bool = True) -> None:
+    def cal_flat(self, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_cal_flat``.
 
@@ -1523,12 +1540,12 @@ class Pipeline:
 
         # Wavelength setting
 
-        if setting is None:
+        if not self.setting:
+            wlen_id = self.setting
+        else:
             science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
-        else:
-            wlen_id = setting
-
+            
         # Iterate over different DIT values for FLAT
 
         for dit_item in unique_dit:
@@ -1944,7 +1961,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_calib(self, calib_type: str, setting: str = None, verbose: bool = True) -> None:
+    def util_calib(self, calib_type: str, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_util_calib``.
 
@@ -2050,11 +2067,11 @@ class Pipeline:
 
             dit_item = float(dit_item)
 
-        if setting is None:
+        if self.setting:
+            wlen_id = self.setting
+        else:
             science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
-        else:
-            wlen_id = setting
 
         print(f"Creating SOF file for DIT={dit_item}:")
 
@@ -2811,7 +2828,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_genlines(self, setting: str = None, verbose: bool = True) -> None:
+    def util_genlines(self, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_util_genlines``. Generate
         spectrum calibration FITS tables.
@@ -2858,11 +2875,11 @@ class Pipeline:
 
         code_dir = Path(__file__).parent
 
-        if setting is None:
+        if self.setting:
+            wavel_set = self.setting
+        else:
             indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
-        else:
-            wavel_set = setting
 
         file_found = False
 
@@ -2974,11 +2991,11 @@ class Pipeline:
         fits_file = output_dir / line_file.with_suffix(".fits").name
         self._update_files("EMISSION_LINES", str(fits_file))
 
-        if setting is None:
+        if self.setting:
+            wlen_id = self.setting
+        else:
             indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
-        else:
-            wlen_id = setting
 
         fits_file = (
             output_dir
@@ -3400,8 +3417,12 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Wavelength setting and DIT
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+        if len(science_idx) > 0:
+            raise ValueError("Cannot run obs_staring: there are no SCIENCE frames")
+
+        # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
         science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
 
@@ -3543,8 +3564,6 @@ class Pipeline:
 
         self._print_section("Process nodding frames", recipe_name="cr2res_obs_nodding")
 
-        indices = self.header_data["DPR.CATG"] == "SCIENCE"
-
         # Create output folder
 
         output_dir = self.product_folder / "obs_nodding"
@@ -3564,9 +3583,13 @@ class Pipeline:
         #
         # print(f"Unique DIT values: {unique_dit}\n")
 
-        # Wavelength setting and DIT
+        indices = self.header_data["DPR.CATG"] == "SCIENCE"
+        science_idx = np.where(indices)[0]
 
-        science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+        if len(science_idx) > 0:
+            raise ValueError("Cannot run obs_staring: there are no SCIENCE frames")
+
+        # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
         science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
 
@@ -4110,6 +4133,11 @@ class Pipeline:
             os.makedirs(output_dir)
 
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
+
+        if len(science_idx) > 0:
+            raise ValueError("Cannot run obs_nodding_irregular: there are no SCIENCE frames")
+
+        # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
         science_dit = self.header_data["DET.SEQ1.DIT"][science_idx[0]]
 
