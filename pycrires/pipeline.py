@@ -2835,6 +2835,170 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
+    def util_bpm_merge(self, verbose: bool = True) -> None:
+        """
+        Method for running ``cr2res_util_bpm_merge``.
+
+        Parameters
+        ----------
+        verbose : bool
+            Print output produced by ``esorex``.
+
+        Returns
+        -------
+        NoneType
+            None
+        """
+
+        self._print_section(
+            "Merge bad pixels maps", recipe_name="cr2res_util_bpm_merge"
+        )
+
+        indices = self.header_data["DPR.TYPE"] == "DARK"
+
+        # Create output folder
+
+        output_dir = self.calib_folder / "util_bpm_merge"
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # Check unique DIT
+
+        unique_dit = set()
+        for item in self.header_data[indices]["DET.SEQ1.DIT"]:
+            unique_dit.add(item)
+
+        if len(unique_dit) == 0:
+            print("Unique DIT values: none")
+        else:
+            print(f"Unique DIT values: {unique_dit}\n")
+        
+        science_idx = np.where(indices)[0]
+            
+        # Wavelength setting and DIT
+        
+        science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
+
+        # Create SOF file
+
+        print("Creating SOF file:")
+
+        sof_file = self.path / "calib/util_bpm_merge/files.sof"
+
+        with open(sof_file, "w", encoding="utf-8") as sof_open:
+        
+            # Find UTIL_MASTER_FLAT file
+
+            file_found = False
+
+            if "UTIL_NORM_BPM" in self.file_dict:
+                for key in self.file_dict["UTIL_NORM_BPM"]:
+                    if not file_found:
+                        file_name = key.split("/")[-2:]
+                        print(
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_NORM_BPM"
+                        )
+                        sof_open.write(f"{key} UTIL_NORM_BPM\n")
+                        file_found = True
+
+            if not file_found:
+                raise RuntimeError(
+                "The UTIL_NORM_BPM file is not found in "
+                "the 'calib' folder. Please first run "
+                "the util_normflat method."
+            )
+
+            # Find CAL_DARK_BPM file
+
+            for science_dit in unique_dit:
+            
+                file_found = False
+
+                if "CAL_DARK_BPM" in self.file_dict:
+                    bpm_file = self.select_bpm(science_wlen, science_dit)
+
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
+                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
+
+
+                if not file_found:
+                    raise RuntimeError(
+                    "The CAL_DARK_BPM file is not found in "
+                    "the 'calib' folder. Please first run "
+                    "the util_calib method."
+                )
+
+        # Find CAL_DETLIN_COEFFS file
+
+        file_found = False
+
+        if "CAL_DETLIN_BPM" in self.file_dict:
+            for key, value in self.file_dict["CAL_DETLIN_BPM"].items():
+                if not file_found:
+                    file_name = key.split("/")[-2:]
+                    print(
+                        f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_BPM"
+                    )
+                    sof_open.write(f"{key} CAL_DETLIN_BPM\n")
+                    file_found = True
+
+        if not file_found:
+                warnings.warn(f"Could not find CAL_DETLIN_BPM.")
+            
+
+        # Create EsoRex configuration file if not found
+
+        self._create_config("cr2res_util_bpm_merge", "util_bpm_merge", verbose)
+
+        # Run EsoRex
+
+        print()
+
+        config_file = self.config_folder / "util_bpm_merge.rc"
+
+        esorex = [
+            "esorex",
+            f"--recipe-config={config_file}",
+            f"--output-dir={output_dir}",
+            "cr2res_util_bpm_merge",
+            sof_file,
+        ]
+
+        if verbose:
+            stdout = None
+        else:
+            stdout = subprocess.DEVNULL
+            print("Running EsoRex...", end="", flush=True)
+
+        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+        if not verbose:
+            print(" [DONE]\n")
+
+        # Update file dictionary with UTIL_MASTER_FLAT file
+
+        print("Output files:")
+
+        fits_file = f"{self.path}/calib/util_bpm_merge/cr2res_util_bpm_merge.fits"
+        self._update_files("UTIL_BPM_MERGE", fits_file)
+
+        # Update file dictionary with UTIL_NORM_BPM file
+
+        fits_file = (
+            f"{self.path}/calib/util_bpm_merge/cr2res_util_bpm_merge.fits"
+        )
+        self._update_files("UTIL_BPM_MERGE", fits_file)
+
+        # Write updated dictionary to JSON file
+
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
+    @typechecked
     def util_genlines(self, verbose: bool = True) -> None:
         """
         Method for running ``cr2res_util_genlines``. Generate
