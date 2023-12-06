@@ -1245,7 +1245,7 @@ class Pipeline:
         science_index = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
         if len(science_index) > 0:
-            raise ValueError("Cannot run skycalc: there are no SCIENCE frames")
+            raise RuntimeError("Cannot run skycalc: there are no SCIENCE frames")
 
         # Requested PWV for observations
 
@@ -3591,7 +3591,7 @@ class Pipeline:
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
         if len(science_idx) > 0:
-            raise ValueError("Cannot run obs_staring: there are no SCIENCE frames")
+            raise RuntimeError("Cannot run obs_staring: there are no SCIENCE frames")
 
         # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
@@ -3758,7 +3758,7 @@ class Pipeline:
         science_idx = np.where(indices)[0]
 
         if len(science_idx) > 0:
-            raise ValueError("Cannot run obs_staring: there are no SCIENCE frames")
+            raise RuntimeError("Cannot run obs_staring: there are no SCIENCE frames")
 
         # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
@@ -4306,7 +4306,7 @@ class Pipeline:
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
         if len(science_idx) > 0:
-            raise ValueError("Cannot run obs_nodding_irregular: there are no SCIENCE frames")
+            raise RuntimeError("Cannot run obs_nodding_irregular: there are no SCIENCE frames")
 
         # Wavelength setting and DIT
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
