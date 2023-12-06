@@ -54,7 +54,7 @@ class Pipeline:
     """
 
     @typechecked
-    def __init__(self, path: Optional[str] = None, setting: Optional[str] = None) -> None:
+    def __init__(self, path: Optional[str] = None, wavel_setting: Optional[str] = None) -> None:
         """
         Parameters
         ----------
@@ -65,7 +65,7 @@ class Pipeline:
             stored. The current working folder is used if the arguments
             of ``path`` is set to ``None``.
 
-        setting : str, None
+        wavel_setting : str, None
             Specific spectral setting for which to process the calibrations.
             This keyword is usefully if one just wants to create calibrations
             without any SCIENCE frames. The default value is ``None``, in 
@@ -93,7 +93,7 @@ class Pipeline:
 
         # manually set spectral setting
 
-        self.setting = setting
+        self.setting = wavel_setting
 
         if self.setting:
             print(f"Manually set spectral setting: {self.setting}")
