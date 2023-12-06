@@ -254,14 +254,17 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.obs_nodding(verbose=False)
 
-            assert str(error.value) == self.esorex_error
+            assert str(error.value) == "Cannot run obs_nodding: there are no SCIENCE frames"
 
         else:
             self.pipeline.obs_nodding(verbose=False)
 
     def test_run_skycalc(self) -> None:
 
-        self.pipeline.run_skycalc(pwv=1.0)
+        with pytest.raises(RuntimeError) as error:
+            self.pipeline.run_skycalc(pwv=1.0)
+
+        assert str(error.value) == "Cannot run skycalc: there are no SCIENCE frames"
 
     def test_plot_spectra(self) -> None:
 
