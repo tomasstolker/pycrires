@@ -93,10 +93,10 @@ class Pipeline:
 
         # manually set spectral setting
 
-        self.setting = wavel_setting
+        self.wavel_setting = wavel_setting
 
-        if self.setting:
-            print(f"Manually set spectral setting: {self.setting}")
+        if self.wavel_setting:
+            print(f"Manually set spectral setting: {self.wavel_setting}")
 
         # Create attributes with the file paths
 
@@ -736,12 +736,12 @@ class Pipeline:
                 break
 
         if download in ["y", "Y"]:
-            if self.setting:
+            if self.wavel_setting:
                 # No SCIENCE frames: we use the spectral setting provided by the user
                 indices = np.where(self.header_data["DPR.CATG"] == "CALIB")[0]
 
                 # Wavelength setting
-                wlen_id = self.setting
+                wlen_id = self.wavel_setting
             else:
                 indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
@@ -921,8 +921,10 @@ class Pipeline:
 
         if "UTIL_SLIT_CURV_TW" in self.file_dict:
             trace_file = list(self.file_dict["UTIL_SLIT_CURV_TW"].keys())[0]
-        else:
+        elif "UTIL_TRACE_TW" in self.file_dict:
             trace_file = list(self.file_dict["UTIL_TRACE_TW"].keys())[0]
+        else:
+            raise ValueError("Could not find a file with the TW table.")
 
         with fits.open(trace_file) as hdu_list:
             trace_data = [hdu_list[1].data, hdu_list[2].data, hdu_list[3].data]
@@ -1547,8 +1549,8 @@ class Pipeline:
 
         # Wavelength setting
 
-        if not self.setting:
-            wlen_id = self.setting
+        if not self.wavel_setting:
+            wlen_id = self.wavel_setting
         else:
             science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
@@ -2074,8 +2076,8 @@ class Pipeline:
 
             dit_item = float(dit_item)
 
-        if self.setting:
-            wlen_id = self.setting
+        if self.wavel_setting:
+            wlen_id = self.wavel_setting
         else:
             science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][science_idx[0]]
@@ -2613,7 +2615,7 @@ class Pipeline:
         #         "the util_trace method."
         #     )
 
-        # Find UTIL_SLIT_CURV_TW file
+        # Find UTIL_WAVE_TW or UTIL_SLIT_CURV_TW file
 
         file_found = False
 
@@ -2623,9 +2625,9 @@ class Pipeline:
                     with open(sof_file, "a", encoding="utf-8") as sof_open:
                         file_name = key.split("/")[-2:]
                         print(
-                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_SLIT_CURV_TW"
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_WAVE_TW"
                         )
-                        sof_open.write(f"{key} UTIL_SLIT_CURV_TW\n")
+                        sof_open.write(f"{key} UTIL_WAVE_TW\n")
                         file_found = True
 
         if "UTIL_SLIT_CURV_TW" in self.file_dict:
@@ -3046,8 +3048,8 @@ class Pipeline:
 
         code_dir = Path(__file__).parent
 
-        if self.setting:
-            wavel_set = self.setting
+        if self.wavel_setting:
+            wavel_set = self.wavel_setting
         else:
             indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wavel_set = self.header_data["INS.WLEN.ID"][indices[0]]
@@ -3162,8 +3164,8 @@ class Pipeline:
         fits_file = output_dir / line_file.with_suffix(".fits").name
         self._update_files("EMISSION_LINES", str(fits_file))
 
-        if self.setting:
-            wlen_id = self.setting
+        if self.wavel_setting:
+            wlen_id = self.wavel_setting
         else:
             indices = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
             wlen_id = self.header_data["INS.WLEN.ID"][indices[0]]
@@ -3590,7 +3592,7 @@ class Pipeline:
 
         science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
 
-        if len(science_idx) > 0:
+        if len(science_idx) == 0:
             raise RuntimeError("Cannot run obs_staring: there are no SCIENCE frames")
 
         # Wavelength setting and DIT
