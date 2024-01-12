@@ -28,7 +28,7 @@ coverage:
 	coverage report -m
 
 test:
-	pytest --cov=pycrires/ --cov-report=xml
+	pytest -s --cov=pycrires/ --cov-report=xml
 
 clean:
 	find . -name '*.pyc' -exec rm -f {} +

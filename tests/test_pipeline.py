@@ -253,9 +253,6 @@ class TestPipeline:
         if shutil.which("esorex") is None:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
-                print(str(error.value))
-
-                # assert str(error.value) == "Cannot run obs_nodding: there are no SCIENCE frames"
 
         else:
             self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
