@@ -33,6 +33,9 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
 .. tip::
   The pipeline will automatically download any missing calibration files (e.g. dark frames with specific DIT). After downloading and uncompressing, it is important to rerun the pipeline such that the calibration files are included with the data reduction.
 
+.. tip::
+  Set ``verbose=True`` to print the output from ``EsoRex`` to check for potential issues with the reduction.
+
 .. code-block:: python
 
   import pycrires
@@ -55,7 +58,7 @@ Below, there is an full example for reducing and calibrating the `CRIRES+ <https
   pipeline.util_calib(calib_type='fpet', verbose=False)
   pipeline.util_extract(calib_type='fpet', verbose=False)
   pipeline.util_wave(calib_type='fpet', poly_deg=4, wl_err=0.01, verbose=False)
-  pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
+  pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True, check_existing=False)
   pipeline.run_skycalc(pwv=1.)
   pipeline.plot_spectra(nod_ab='A', telluric=True, corrected=False, file_id=0)
 
