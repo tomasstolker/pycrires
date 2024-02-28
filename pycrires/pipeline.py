@@ -1028,6 +1028,161 @@ class Pipeline:
                 plt.close()
 
     @typechecked
+    def _find(self, key: str, key_type: Optional[str] = None) -> Dict[str, List[str]]:
+        """
+        Internal method for finding a file in the file dictionary
+        given the `key` and an  optional `key_type` (usually `fpet`
+        or `une`).
+
+        Parameters
+        ----------
+        key : str
+            TODO
+        key_type : str, None
+            TODO
+
+        Returns
+        -------
+        dict
+            TODO
+        """
+
+        assert key in self.file_dict, f"No {key} found"
+
+        if key_type is not None:
+            # Paths to each file (FPET is required)
+            keys = list(self.file_dict[key].keys())
+
+            # Usually ['flat', 'fpet', 'calib']
+            available_keys = [x.split("/")[-2].split("_")[-1] for x in keys]
+
+            assert key_type in available_keys, f"No `{key}` file found"
+
+            return keys[available_keys.index(key_type)]
+
+        return self.file_dict[key]
+
+    @typechecked
+    def _select_bpm(
+        self, wlen_id: str, dit_select: float, bpm_type: str = "CAL_DARK_BPM"
+    ) -> Optional[str]:
+        """
+        Internal method for selecting the bad pixel map (BPM)of the
+        requested DIT. An adjustment is made for long exposures in
+        the :math:`K` band, of which some orders can be affected
+        by the thermal continuum.
+
+        Parameters
+        ----------
+        wlen_id : str
+            Wavelength setting of the science exposures for which
+            the bad pixel map should be selected.
+        dit_select : float
+            Detector integration time (DIT) for which the bad
+            pixel map should be selected.
+        bpm_type : str
+            Bad pixel map type ('CAL_DARK_BPM', 'UTIL_BPM_MERGE')
+
+        Returns
+        -------
+        str, None
+            Filename of the bad pixel map. A ``None`` is returned
+            if a bad pixel map was not found.
+        """
+
+        file_found = False
+        bpm_file = None
+
+        warn_msg = (
+            "The thermal continuum becomes visible in "
+            "the reddest orders of long DARK exposures "
+            "obtained in the K band. This affects the "
+            "identification of bad pixels with the GLOBAL "
+            "method. A BPM that was derived from a shorter "
+            "exposure will therefore be selected instead."
+        )
+
+        bpm_dit = set()
+
+        if bpm_type in self.file_dict:
+
+            for key, value in self.file_dict[bpm_type].items():
+                if not file_found:
+                    if wlen_id[0] == "K" and dit_select > 10.0:
+                        if value["DIT"] < 10.0:
+                            bpm_file = key
+                            file_found = True
+
+                            warnings.warn(warn_msg)
+
+                    elif dit_select == value["DIT"]:
+                        bpm_file = key
+                        file_found = True
+
+        return bpm_file
+
+    @typechecked
+    def _find_master_dark(
+        self, science_dit: float, key: str = "CAL_DARK_MASTER"
+    ) -> List[str]:
+        """
+        Internal method for ... TODO
+
+        Parameters
+        ----------
+        science_dit : float
+            TODO
+        key : str
+            TODO
+
+        Returns
+        -------
+        list(str)
+            TODO
+        """
+
+        assert key in self.file_dict, f"No {key} BPM found"
+
+        dits = [f["DIT"] for f in self.file_dict[key].values()]
+
+        assert True in np.isclose(science_dit, dits, 1e-2), "No matching DIT found"
+
+        ind_dit = list(np.isclose(science_dit, dits, 1e-2)).index(True)
+
+        return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
+
+    @typechecked
+    def _find_master_flat(self) -> Tuple[str, str]:
+        """
+        Find a suitable master flat file from the file dictionary.
+
+        Returns
+        -------
+        master_flat_filename : str
+            Path to file.
+        good_key : str
+            Type of master flat (`UTIL_MASTER_FLAT`, `CAL_MASTER_FLAT`)
+        """
+
+        master_flat_keys = ["UTIL_MASTER_FLAT", "CAL_MASTER_FLAT"]
+        which_key = [key in self.file_dict for key in master_flat_keys]
+        assert True in which_key, "No master flat found"
+
+        if all(which_key):
+            warnings.warn("Multiple master flats found. Using UTIL_MASTER_FLAT.")
+            which_key[1] = False
+
+        good_key = master_flat_keys[which_key.index(True)]
+        master_flat_filename = list(self.file_dict[good_key])[0]
+        print(master_flat_filename)
+
+        # key_value = self.file_dict[good_key]
+        # file_name = master_flat_filename.split("/")[-2:]
+        # print(f"   - calib/{file_name[-2]}/{file_name[-1]} {good_key}")
+
+        return master_flat_filename, good_key
+
+    @typechecked
     def rename_files(self) -> None:
         """
         Method for renaming the files from ``ARCFILE`` to ``ORIGFILE``.
@@ -1160,60 +1315,6 @@ class Pipeline:
             )
 
     @typechecked
-    def select_bpm(self, wlen_id: str, dit_select: float) -> Optional[str]:
-        """
-        Method for selecting the bad pixel map (BPM)
-        of the requested DIT. An adjusted is made
-        for long exposure in the :math:`K` band, of
-        which some orders can be affected by the
-        thermal continuum.
-
-        Parameters
-        ----------
-        wlen_id : str
-            Wavelength setting of the science exposures.
-        dit_select : float
-            Detector integration time (DIT) for
-            which the BPM should be selected.
-
-        Returns
-        -------
-        str, None
-            Filename of the BPM. A ``None`` is returned
-            if a BPM was not found.
-        """
-
-        bpm_dit = set()
-        for key, value in self.file_dict["CAL_DARK_BPM"].items():
-            bpm_dit.add(value["DIT"])
-
-        file_found = False
-        bpm_file = None
-
-        warn_msg = (
-            "The thermal continuum becomes visible in "
-            "the reddest orders of long DARK exposures "
-            "obtained in the K band. This affects the "
-            "identification of bad pixels with the GLOBAL "
-            "method. A BPM that was derived from a shorter "
-            "exposure will therefore be selected instead."
-        )
-
-        for key, value in self.file_dict["CAL_DARK_BPM"].items():
-            if not file_found:
-                if wlen_id[0] == "K" and dit_select > 10.0:
-                    if value["DIT"] < 10.0:
-                        warnings.warn(warn_msg)
-                        bpm_file = key
-                        file_found = True
-
-                elif dit_select == value["DIT"]:
-                    bpm_file = key
-                    file_found = True
-
-        return bpm_file
-
-    @typechecked
     def run_skycalc(self, pwv: float = 3.5) -> None:
         """
         Method for running the Python wrapper of SkyCalc
@@ -1318,7 +1419,7 @@ class Pipeline:
         sky_calc["vacair"] = "vac"
 
         print(f"  - Wavelength range (nm) = {sky_calc['wmin']} - {sky_calc['wmax']}")
-        print(f"  - lambda / Dlambda = {sky_calc['wres']}")
+        print(f"  - lambda / Delta_lambda = {sky_calc['wres']}")
         print(f"  - Airmass = {sky_calc['airmass']:.2f}")
         print(f"  - PWV (mm) = {sky_calc['pwv']}\n")
 
@@ -1587,7 +1688,7 @@ class Pipeline:
 
         # Wavelength setting
 
-        if not self.wavel_setting:
+        if self.wavel_setting:
             wlen_id = self.wavel_setting
         else:
             science_idx = np.where(self.header_data["DPR.CATG"] == "SCIENCE")[0]
@@ -1596,13 +1697,15 @@ class Pipeline:
         # Iterate over different DIT values for FLAT
 
         for dit_item in unique_dit:
-            sof_file = Path(self.path / f"calib/cal_flat/files_dit{dit_item:.2f}.sof")
+            sof_file = Path(
+                self.path / f"calib/cal_flat/files_dit{round(dit_item, 5)}.sof"
+            )
 
             if not create_sof and not sof_file.exists():
                 warnings.warn(
                     f"The SOF file is not found at '{sof_file}' "
                     "while 'create_sof' is set to False. "
-                    "Probably 'cal_dark' has not been "
+                    "Probably 'cal_flay' has not been "
                     "previously executed so forcing "
                     "'create_sof' to True."
                 )
@@ -1646,7 +1749,7 @@ class Pipeline:
                     file_found = False
 
                     if "CAL_DARK_BPM" in self.file_dict:
-                        bpm_file = self.select_bpm(wlen_id, dit_item)
+                        bpm_file = self._select_bpm(wlen_id, dit_item, "CAL_DARK_BPM")
 
                         if bpm_file is not None:
                             file_name = bpm_file.split("/")[-2:]
@@ -1658,7 +1761,7 @@ class Pipeline:
 
                     if not file_found:
                         warnings.warn(
-                            f"There is not a bad pixel map " f"with DIT = {dit_item} s."
+                            f"There is not a bad pixel map with DIT = {dit_item} s."
                         )
 
             else:
@@ -1697,7 +1800,7 @@ class Pipeline:
 
             print("\nOutput files:")
 
-            fits_files = Path(self.path / "calib").glob(
+            fits_files = Path(self.path / "calib/cal_flat").glob(
                 "cr2res_cal_flat_*master_flat.fits"
             )
 
@@ -1706,7 +1809,7 @@ class Pipeline:
 
             # Update file dictionary with TraceWave table
 
-            fits_files = Path(self.path / "calib").glob("cr2res_cal_flat_*tw.fits")
+            fits_files = Path(self.path / "calib/cal_flat").glob("cr2res_cal_flat_*tw.fits")
 
             for item in fits_files:
                 self._update_files("CAL_FLAT_TW", str(item))
@@ -1758,17 +1861,6 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Check unique DIT
-
-        unique_dit = set()
-        for item in self.header_data[indices]["DET.SEQ1.DIT"]:
-            unique_dit.add(item)
-
-        if len(unique_dit) == 0:
-            print("Unique DIT values: none")
-        else:
-            print(f"Unique DIT values: {unique_dit}\n")
-
         # Create SOF file
 
         sof_file = Path(output_dir / "files.sof")
@@ -1777,7 +1869,7 @@ class Pipeline:
             warnings.warn(
                 f"The SOF file is not found at '{sof_file}' "
                 "while 'create_sof' is set to False. "
-                "Probably 'cal_dark' has not been "
+                "Probably 'cal_detlin' has not been "
                 "previously executed so forcing "
                 "'create_sof' to True."
             )
@@ -1785,7 +1877,7 @@ class Pipeline:
             create_sof = True
 
         if create_sof:
-            print("Creating SOF file:")
+            print("\nCreating SOF file:")
 
             with open(sof_file, "w", encoding="utf-8") as sof_open:
                 for item in self.header_data[indices]["ORIGFILE"]:
@@ -1897,7 +1989,7 @@ class Pipeline:
             warnings.warn(
                 f"The SOF file is not found at '{sof_file}' "
                 "while 'create_sof' is set to False. "
-                "Probably 'cal_dark' has not been "
+                "Probably 'cal_wave' has not been "
                 "previously executed so forcing "
                 "'create_sof' to True."
             )
@@ -2202,7 +2294,8 @@ class Pipeline:
         # Create SOF file
 
         sof_file = Path(
-            self.path / f"calib/util_calib_{calib_type}/files_dit{dit_item:.2f}.sof"
+            self.path
+            / f"calib/util_calib_{calib_type}/files_dit{round(dit_item, 5)}.sof"
         )
 
         if not create_sof and not sof_file.exists():
@@ -2279,8 +2372,8 @@ class Pipeline:
 
                 file_found = False
 
-                if "CAL_DARK_BPM" in self.file_dict:
-                    bpm_file = self.select_bpm(wlen_id, dit_item)
+                if "CAL_DARK_BPM" in self.file_dict and not file_found:
+                    bpm_file = self._select_bpm(wlen_id, dit_item, "CAL_DARK_BPM")
 
                     if bpm_file is not None:
                         file_name = bpm_file.split("/")[-2:]
@@ -2288,6 +2381,17 @@ class Pipeline:
                             f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM"
                         )
                         sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
+
+                if "UTIL_BPM_MERGE" in self.file_dict and not file_found:
+                    bpm_file = self._select_bpm(wlen_id, dit_item, "UTIL_BPM_MERGE")
+
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_BPM_MERGE"
+                        )
+                        sof_open.write(f"{bpm_file} UTIL_BPM_MERGE\n")
                         file_found = True
 
                 if not file_found:
@@ -3147,7 +3251,7 @@ class Pipeline:
         if len(unique_dit) == 0:
             print("\nUnique DIT values: none")
         else:
-            print(f"\nUnique DIT values: {unique_dit}\n")
+            print(f"\nUnique DIT values: {unique_dit}")
 
         science_idx = np.where(indices)[0]
 
@@ -3155,53 +3259,36 @@ class Pipeline:
 
         science_wlen = self.header_data["INS.WLEN.ID"][science_idx[0]]
 
-        # Create SOF file
+        for dit_item in unique_dit:
+            # Create SOF file
 
-        sof_file = self.path / "calib/util_bpm_merge/files.sof"
-
-        if not create_sof and not sof_file.exists():
-            warnings.warn(
-                f"The SOF file is not found at '{sof_file}' "
-                "while 'create_sof' is set to False. "
-                "Probably 'util_bpm_merge' has not been "
-                "previously executed so forcing "
-                "'create_sof' to True."
+            sof_file = (
+                self.path / f"calib/util_bpm_merge/files_dit{round(dit_item, 5)}.sof"
             )
 
-            create_sof = True
+            if not create_sof and not sof_file.exists():
+                warnings.warn(
+                    f"The SOF file is not found at '{sof_file}' "
+                    "while 'create_sof' is set to False. "
+                    "Probably 'util_bpm_merge' has not been "
+                    "previously executed so forcing "
+                    "'create_sof' to True."
+                )
 
-        if create_sof:
-            print("\nCreating SOF file:")
+                create_sof = True
 
-            with open(sof_file, "w", encoding="utf-8") as sof_open:
-                # Find UTIL_NORM_BPM file
+            if create_sof:
+                print("\nCreating SOF file:")
 
-                file_found = False
+                with open(sof_file, "w", encoding="utf-8") as sof_open:
+                    # Find CAL_DARK_BPM file
 
-                if "UTIL_NORM_BPM" in self.file_dict:
-                    for key in self.file_dict["UTIL_NORM_BPM"]:
-                        if not file_found:
-                            file_name = key.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_NORM_BPM"
-                            )
-                            sof_open.write(f"{key} UTIL_NORM_BPM\n")
-                            file_found = True
-
-                if not file_found:
-                    raise RuntimeError(
-                        "The UTIL_NORM_BPM file is not found in "
-                        "the 'calib' folder. Please first run "
-                        "the util_normflat method."
-                    )
-
-                # Find CAL_DARK_BPM file
-
-                for science_dit in unique_dit:
                     file_found = False
 
                     if "CAL_DARK_BPM" in self.file_dict:
-                        bpm_file = self.select_bpm(science_wlen, science_dit)
+                        bpm_file = self._select_bpm(
+                            science_wlen, dit_item, "CAL_DARK_BPM"
+                        )
 
                         if bpm_file is not None:
                             file_name = bpm_file.split("/")[-2:]
@@ -3212,72 +3299,102 @@ class Pipeline:
                             file_found = True
 
                     if not file_found:
-                        raise RuntimeError(
+                        warnings.warn(
                             "The CAL_DARK_BPM file is not found in "
-                            "the 'calib' folder. Please first run "
-                            "the util_calib method."
+                            f"the 'calib' folder for DIT={dit_item}. "
+                            "The cal_dark method should be executed "
+                            "for creating UTIL_NORM_BPM. Currently, "
+                            "it will not be included in the combined "
+                            "bad pixel map."
                         )
 
-            # Find CAL_DETLIN_COEFFS file
+                    # Find UTIL_NORM_BPM file
 
-            file_found = False
+                    file_found = False
 
-            if "CAL_DETLIN_BPM" in self.file_dict:
-                for key, value in self.file_dict["CAL_DETLIN_BPM"].items():
+                    if "UTIL_NORM_BPM" in self.file_dict:
+                        for key in self.file_dict["UTIL_NORM_BPM"]:
+                            if not file_found:
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} UTIL_NORM_BPM"
+                                )
+                                sof_open.write(f"{key} UTIL_NORM_BPM\n")
+                                file_found = True
+
                     if not file_found:
-                        file_name = key.split("/")[-2:]
-                        print(
-                            f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_BPM"
+                        warnings.warn(
+                            "The UTIL_NORM_BPM file is not found in "
+                            "the 'calib' folder. The util_normflat "
+                            "method should be executed for creating "
+                            "UTIL_NORM_BPM. Currently, it will not be "
+                            "included in the combined bad pixel map."
                         )
-                        sof_open.write(f"{key} CAL_DETLIN_BPM\n")
-                        file_found = True
 
-            if not file_found:
-                warnings.warn(f"Could not find CAL_DETLIN_BPM.")
+                    # Find CAL_DETLIN_BPM file
 
-        else:
-            print(f"\nFound SOF file: {sof_file}")
+                    file_found = False
 
-        # Create EsoRex configuration file if not found
+                    if "CAL_DETLIN_BPM" in self.file_dict:
+                        for key in self.file_dict["CAL_DETLIN_BPM"]:
+                            if not file_found:
+                                file_name = key.split("/")[-2:]
+                                print(
+                                    f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DETLIN_BPM"
+                                )
+                                sof_open.write(f"{key} CAL_DETLIN_BPM\n")
+                                file_found = True
 
-        self._create_config("cr2res_util_bpm_merge", "util_bpm_merge", verbose)
+                    if not file_found:
+                        warnings.warn(
+                            "The CAL_DETLIN_BPM file is not found in "
+                            "the 'calib' folder. The cal_detlin "
+                            "method should be executed for creating "
+                            "CAL_DETLIN_BPM. Currently, it will not be "
+                            "included in the combined bad pixel map."
+                        )
 
-        # Run EsoRex
+            else:
+                print(f"\nFound SOF file: {sof_file}")
 
-        print()
+            # Create EsoRex configuration file if not found
 
-        config_file = self.config_folder / "util_bpm_merge.rc"
+            self._create_config("cr2res_util_bpm_merge", "util_bpm_merge", verbose)
 
-        esorex = [
-            "esorex",
-            f"--recipe-config={config_file}",
-            f"--output-dir={output_dir}",
-            "cr2res_util_bpm_merge",
-            sof_file,
-        ]
+            # Run EsoRex
 
-        if verbose:
-            stdout = None
-        else:
-            stdout = subprocess.DEVNULL
-            print("Running EsoRex...", end="", flush=True)
+            print()
 
-        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+            config_file = self.config_folder / "util_bpm_merge.rc"
 
-        if not verbose:
-            print(" [DONE]")
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={output_dir}",
+                "cr2res_util_bpm_merge",
+                sof_file,
+            ]
 
-        # Update file dictionary with UTIL_BPM_MERGE file
+            if verbose:
+                stdout = None
+            else:
+                stdout = subprocess.DEVNULL
+                print("Running EsoRex...", end="", flush=True)
 
-        print("\nOutput files:")
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
-        fits_file = f"{self.path}/calib/util_bpm_merge/cr2res_util_bpm_merge.fits"
-        self._update_files("UTIL_BPM_MERGE", fits_file)
+            if not verbose:
+                print(" [DONE]")
 
-        # Update file dictionary with UTIL_NORM_BPM file
+            # Update file dictionary with UTIL_BPM_MERGE file
 
-        fits_file = f"{self.path}/calib/util_bpm_merge/cr2res_util_bpm_merge.fits"
-        self._update_files("UTIL_BPM_MERGE", fits_file)
+            print("\nOutput files:")
+
+            fits_file = f"{self.path}/calib/util_bpm_merge/cr2res_util_bpm_merge.fits"
+            new_file = fits_file[:-5] + f"_dit{round(dit_item, 5)}.fits"
+            os.rename(fits_file, new_file)
+
+            self._update_files("UTIL_BPM_MERGE", new_file)
 
         # Write updated dictionary to JSON file
 
@@ -3773,130 +3890,6 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def _find_master_flat(self) -> Tuple[str, str]:
-        """
-        Find a suitable master flat file from the file dictionary.
-
-        Returns
-        -------
-        master_flat_filename : str
-            Path to file.
-        good_key : str
-            Type of master flat (`UTIL_MASTER_FLAT`, `CAL_MASTER_FLAT`)
-        """
-
-        master_flat_keys = ["UTIL_MASTER_FLAT", "CAL_MASTER_FLAT"]
-        which_key = [key in self.file_dict for key in master_flat_keys]
-        assert True in which_key, "No master flat found"
-
-        if all(which_key):
-            warnings.warn("Multiple master flats found. Using UTIL_MASTER_FLAT.")
-            which_key[1] = False
-
-        good_key = master_flat_keys[which_key.index(True)]
-        master_flat_filename = list(self.file_dict[good_key])[0]
-        print(master_flat_filename)
-
-        # key_value = self.file_dict[good_key]
-        # file_name = master_flat_filename.split("/")[-2:]
-        # print(f"   - calib/{file_name[-2]}/{file_name[-1]} {good_key}")
-
-        return master_flat_filename, good_key
-
-    @typechecked
-    def _find_bpm(self, science_wlen: str, science_dit: float) -> Optional[str]:
-        """
-        Internal method for ... TODO
-
-        Parameters
-        ----------
-        science_wlen : str
-            TODO
-        science_dit : float
-            TODO
-
-        Returns
-        -------
-        str, None
-            TODO
-        """
-
-        assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
-
-        bpm_file = self.select_bpm(science_wlen, science_dit)
-
-        file_name = bpm_file.split("/")[-2:]
-
-        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
-
-        return bpm_file
-
-    @typechecked
-    def _find_master_dark(
-        self, science_dit: float, key: str = "CAL_DARK_MASTER"
-    ) -> List[str]:
-        """
-        Internal method for ... TODO
-
-        Parameters
-        ----------
-        science_dit : float
-            TODO
-        key : str
-            TODO
-
-        Returns
-        -------
-        list(str)
-            TODO
-        """
-
-        assert key in self.file_dict, f"No {key} BPM found"
-
-        dits = [f["DIT"] for f in self.file_dict[key].values()]
-
-        assert True in np.isclose(science_dit, dits, 1e-2), "No matching DIT found"
-
-        ind_dit = list(np.isclose(science_dit, dits, 1e-2)).index(True)
-
-        return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
-
-    @typechecked
-    def _find(self, key: str, key_type: Optional[str] = None) -> Dict[str, List[str]]:
-        """
-        Internal method for finding a file in the file dictionary
-        given the `key` and an  optional `key_type` (usually `fpet`
-        or `une`).
-
-        Parameters
-        ----------
-        key : str
-            TODO
-        key_type : str, None
-            TODO
-
-        Returns
-        -------
-        dict
-            TODO
-        """
-
-        assert key in self.file_dict, f"No {key} found"
-
-        if key_type is not None:
-            # Paths to each file (FPET is required)
-            keys = list(self.file_dict[key].keys())
-
-            # Usually ['flat', 'fpet', 'calib']
-            available_keys = [x.split("/")[-2].split("_")[-1] for x in keys]
-
-            assert key_type in available_keys, f"No `{key}` file found"
-
-            return keys[available_keys.index(key_type)]
-
-        return self.file_dict[key]
-
-    @typechecked
     def obs_staring(
         self, verbose: bool = True, check_existing: bool = True, create_sof: bool = True
     ) -> None:
@@ -3951,7 +3944,10 @@ class Pipeline:
         master_flat_filename, master_flat_label = self._find_master_flat()
 
         # Find dark BPM
-        bpm_file = self._find_bpm(science_wlen, science_dit)
+        assert "CAL_DARK_BPM" in self.file_dict, "No dark BPM found"
+        bpm_file = self._select_bpm(science_wlen, science_dit, "CAL_DARK_BPM")
+        file_name = bpm_file.split("/")[-2:]
+        print(f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM")
 
         # Find master DARK
         master_dark_filename = self._find_master_dark(science_dit, "CAL_DARK_MASTER")
@@ -4064,10 +4060,10 @@ class Pipeline:
     @typechecked
     def obs_nodding(
         self,
-        verbose: bool = True,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
         check_existing: bool = False,
+        verbose: bool = True,
         create_sof: bool = True,
     ) -> None:
         """
@@ -4075,13 +4071,12 @@ class Pipeline:
 
         Parameters
         ----------
-        verbose : bool
-            Print output produced by ``esorex``.
         correct_bad_pixels : bool
-            Correct bad pixels with the bad pixel map and
+            Correct the bad pixel with
             ``skimage.restoration.inpaint``. If set to
-            ``False``, the bad pixels will remain as NaN
-            in the output images.
+            ``False``, the bad pixels that were identified
+            and marked in the bad pixel map will remain as
+            NaN in the output images.
         extraction_required : bool
             Set to ``True`` if accuracy of the extracted 1D spectra
             is important. Set to ``False`` if the extraction will
@@ -4097,6 +4092,8 @@ class Pipeline:
         check_existing : bool
             Search for existing files in the product
             folder. Avoids re-reducing existing files.
+        verbose : bool
+            Print output produced by ``esorex``.
         create_sof : bool
             Create a new SOF file. Setting the argument to ``True``
             will overwrite the SOF file if already present. Setting
@@ -4135,7 +4132,7 @@ class Pipeline:
         # for item in self.header_data[indices]["DET.SEQ1.DIT"]:
         #     unique_dit.add(item)
         #
-        # print(f"Unique DIT values: {unique_dit}\n")
+        # print(f"Unique DIT values: {unique_dit}")
 
         indices = self.header_data["DPR.CATG"] == "SCIENCE"
         science_idx = np.where(indices)[0]
@@ -4333,12 +4330,14 @@ class Pipeline:
                 if not file_found:
                     warnings.warn("Could not find a master flat.")
 
-                # Find CAL_DARK_BPM file
+                # Find UTIL_BPM_MERGE or CAL_DARK_BPM file
 
                 file_found = False
 
-                if "CAL_DARK_BPM" in self.file_dict:
-                    bpm_file = self.select_bpm(science_wlen, science_dit)
+                if "CAL_DARK_BPM" in self.file_dict and not file_found:
+                    bpm_file = self._select_bpm(
+                        science_wlen, science_dit, "CAL_DARK_BPM"
+                    )
 
                     if bpm_file is not None:
                         file_name = bpm_file.split("/")[-2:]
@@ -4348,16 +4347,21 @@ class Pipeline:
                         sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
                         file_found = True
 
-                        if bpm_file is not None:
-                            file_name = bpm_file.split("/")[-2:]
-                            print(
-                                f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM"
-                            )
-                            sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
-                            file_found = True
+                if "UTIL_BPM_MERGE" in self.file_dict and not file_found:
+                    bpm_file = self._select_bpm(
+                        science_wlen, science_dit, "UTIL_BPM_MERGE"
+                    )
+
+                    if bpm_file is not None:
+                        file_name = bpm_file.split("/")[-2:]
+                        print(
+                            f"   - calib/{file_name[-2]}/{file_name[-1]} CAL_DARK_BPM"
+                        )
+                        sof_open.write(f"{bpm_file} CAL_DARK_BPM\n")
+                        file_found = True
 
                 if not file_found:
-                    warnings.warn("Could not find a bap pixel map.")
+                    warnings.warn("Could not find a bad pixel map.")
 
                 # Find UTIL_WAVE_TW file
 
@@ -4524,9 +4528,9 @@ class Pipeline:
 
                             # Overwrite the image
                             # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 1
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                            hdu_list[(det_idx * 2) + 1].data = (
+                                inpaint.inpaint_biharmonic(image, mask)
+                            )
 
                             bp_fraction = np.sum(np.isnan(image)) / np.size(image)
                             print(
@@ -4545,9 +4549,9 @@ class Pipeline:
 
                             # Overwrite the image
                             # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 2
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                            hdu_list[(det_idx * 2) + 2].data = (
+                                inpaint.inpaint_biharmonic(image, mask)
+                            )
 
                         hdu_list.writeto(fits_file, overwrite=True)
 
@@ -4890,7 +4894,9 @@ class Pipeline:
                     file_found = False
 
                     if "CAL_DARK_BPM" in self.file_dict:
-                        bpm_file = self.select_bpm(science_wlen, science_dit)
+                        bpm_file = self._select_bpm(
+                            science_wlen, science_dit, "CAL_DARK_BPM"
+                        )
 
                         if bpm_file is not None:
                             file_name = bpm_file.split("/")[-2:]
@@ -4901,7 +4907,7 @@ class Pipeline:
                             file_found = True
 
                     if not file_found:
-                        warnings.warn("Could not find a bap pixel map.")
+                        warnings.warn("Could not find a bad pixel map.")
 
                     # Find UTIL_WAVE_TW file
 
@@ -5008,9 +5014,9 @@ class Pipeline:
 
                             # Overwrite the image
                             # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 1
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                            hdu_list[(det_idx * 2) + 1].data = (
+                                inpaint.inpaint_biharmonic(image, mask)
+                            )
 
                             bp_fraction = np.sum(np.isnan(image)) / np.size(image)
                             print(
@@ -5029,9 +5035,9 @@ class Pipeline:
 
                             # Overwrite the image
                             # Bad pixels are corrected by inpainting
-                            hdu_list[
-                                (det_idx * 2) + 2
-                            ].data = inpaint.inpaint_biharmonic(image, mask)
+                            hdu_list[(det_idx * 2) + 2].data = (
+                                inpaint.inpaint_biharmonic(image, mask)
+                            )
 
                         hdu_list.writeto(fits_file, overwrite=True)
 
@@ -5760,7 +5766,7 @@ class Pipeline:
             print(" [DONE]")
 
             if create_plots:
-                data = hdu_list[f"CHIP1.INT1"].data
+                data = hdu_list["CHIP1.INT1"].data
 
                 spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
 
@@ -6271,16 +6277,13 @@ class Pipeline:
         fits_files = sorted(
             list(self.file_dict[f"OBS_NODDING_COMBINED{nod_ab}"].keys())
         )
-        out_files = []
 
         # Iterate over exposures
         for count_exp, fits_file in enumerate(fits_files):
             if count_exp > 0:
                 print()
 
-            print(
-                f"Creating SOF file for exposure " f"#{count_exp+1}/{len(fits_files)}:"
-            )
+            print(f"Creating SOF file for exposure #{count_exp+1}/{len(fits_files)}:")
 
             # Prepare SOF file
             sof_file = Path(
@@ -6404,9 +6407,7 @@ class Pipeline:
             if count_exp > 0:
                 print()
 
-            print(
-                f"Creating SOF file for exposure " f"#{count_exp+1}/{len(fits_files)}:"
-            )
+            print(f"Creating SOF file for exposure #{count_exp+1}/{len(fits_files)}:")
 
             # Prepare SOF file
             sof_file = Path(

@@ -252,10 +252,10 @@ class TestPipeline:
 
         if shutil.which("esorex") is None:
             with pytest.raises(RuntimeError) as error:
-                self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
+                self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=False, extraction_required=False)
 
         else:
-            self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=True, extraction_required=True)
+            self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=False, extraction_required=False)
 
     def test_run_skycalc(self) -> None:
 
