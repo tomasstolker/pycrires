@@ -3,26 +3,9 @@
 
 Data reduction pipeline for VLT/CRIRES+
 
-.. image:: https://img.shields.io/pypi/v/pycrires
-   :target: https://pypi.python.org/pypi/pycrires
+.. container::
 
-.. image:: https://img.shields.io/pypi/pyversions/pycrires
-   :target: https://pypi.python.org/pypi/pycrires
-
-.. image:: https://github.com/tomasstolker/pycrires/workflows/CI/badge.svg?branch=main
-   :target: https://github.com/tomasstolker/pycrires/actions
-
-.. image:: https://img.shields.io/readthedocs/pycrires
-   :target: http://pycrires.readthedocs.io
-
-.. image:: https://codecov.io/gh/tomasstolker/pycrires/branch/main/graph/badge.svg?token=3O7YEYIR8C
-   :target: https://codecov.io/gh/tomasstolker/
-
-.. image:: https://img.shields.io/codefactor/grade/github/tomasstolker/pycrires
-   :target: https://www.codefactor.io/repository/github/tomasstolker/pycrires
-
-.. image:: https://img.shields.io/github/license/tomasstolker/pycrires
-   :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
+    |PyPI Status| |Python Versions| |CI Status| |Docs Status| |Code Coverage| |Code Quality| |License|
 
 *pycrires* is a Python wrapper for running the CRIRES+ recipes of *EsoRex*.
 
@@ -53,3 +36,24 @@ License
 Copyright 2021-2024 Tomas Stolker & Rico Landman
 
 *pycrires* is distributed under the MIT License. See `LICENSE <https://github.com/tomasstolker/pycrires/blob/main/LICENSE>`_ for the terms and conditions.
+
+.. |PyPI Status| image:: https://img.shields.io/pypi/v/pycrires
+   :target: https://pypi.python.org/pypi/pycrires
+
+.. |Python Versions| image:: https://img.shields.io/pypi/pyversions/pycrires
+   :target: https://pypi.python.org/pypi/pycrires
+
+.. |CI Status| image:: https://github.com/tomasstolker/pycrires/actions/workflows/main.yml/badge.svg
+   :target: https://github.com/tomasstolker/pycrires/actions
+
+.. |Docs Status| image:: https://img.shields.io/readthedocs/pycrires
+   :target: http://pycrires.readthedocs.io
+
+.. |Code Coverage| image:: https://codecov.io/gh/tomasstolker/pycrires/branch/main/graph/badge.svg?token=LSSCPMJ5JH
+   :target: https://codecov.io/gh/tomasstolker/pycrires
+
+.. |Code Quality| image:: https://img.shields.io/codefactor/grade/github/tomasstolker/pycrires
+   :target: https://www.codefactor.io/repository/github/tomasstolker/pycrires
+
+.. |License| image:: https://img.shields.io/github/license/tomasstolker/pycrires
+   :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
