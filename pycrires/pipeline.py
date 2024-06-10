@@ -1280,7 +1280,7 @@ class Pipeline:
         key_file = os.path.dirname(__file__) + "/keywords.txt"
         keywords = np.genfromtxt(key_file, dtype="str", delimiter=",")
 
-        raw_files = Path(self.path / "raw").glob("*.fits")
+        raw_files = sorted(Path(self.path / "raw").glob("*.fits"))
 
         header_dict = {}
         for key_item in keywords:
@@ -1599,8 +1599,8 @@ class Pipeline:
 
         print("Output files:")
 
-        fits_files = Path(self.path / "calib/cal_dark").glob(
-            "cr2res_cal_dark_*master.fits"
+        fits_files = sorted(
+            Path(self.path / "calib/cal_dark").glob("cr2res_cal_dark_*master.fits")
         )
 
         for item in fits_files:
@@ -1608,8 +1608,8 @@ class Pipeline:
 
         # Update file dictionary with bad pixel map
 
-        fits_files = Path(self.path / "calib/cal_dark").glob(
-            "cr2res_cal_dark_*bpm.fits"
+        fits_files = sorted(
+            Path(self.path / "calib/cal_dark").glob("cr2res_cal_dark_*bpm.fits")
         )
 
         for item in fits_files:
@@ -1800,8 +1800,10 @@ class Pipeline:
 
             print("\nOutput files:")
 
-            fits_files = Path(self.path / "calib/cal_flat").glob(
-                "cr2res_cal_flat_*master_flat.fits"
+            fits_files = sorted(
+                Path(self.path / "calib/cal_flat").glob(
+                    "cr2res_cal_flat_*master_flat.fits"
+                )
             )
 
             for item in fits_files:
@@ -1809,7 +1811,9 @@ class Pipeline:
 
             # Update file dictionary with TraceWave table
 
-            fits_files = Path(self.path / "calib/cal_flat").glob("cr2res_cal_flat_*tw.fits")
+            fits_files = sorted(
+                Path(self.path / "calib/cal_flat").glob("cr2res_cal_flat_*tw.fits")
+            )
 
             for item in fits_files:
                 self._update_files("CAL_FLAT_TW", str(item))
@@ -3447,7 +3451,7 @@ class Pipeline:
             data_static = Path(esorex_path[:-10] + "share/esopipes/datastatic")
 
             if data_static.is_dir():
-                if data_static.glob("cr2re-*"):
+                if sorted(data_static.glob("cr2re-*")):
                     cr2re_folder = list(data_static.glob("cr2re-*"))[0]
                     cr2re_data = glob.glob(f"{cr2re_folder}/*")
 
@@ -4187,9 +4191,11 @@ class Pipeline:
             files_raw_b = self.header_data[nod_b_exp]["ORIGFILE"]
             files_raw = list(files_raw_a) + list(files_raw_b)
 
-            files_cal = glob.glob(
-                str(self.calib_folder) + "/util_calib_nodding/"
-                "CRIRES_SPEC_*_calibrated.fits"
+            files_cal = sorted(
+                glob.glob(
+                    str(self.calib_folder) + "/util_calib_nodding/"
+                    "CRIRES_SPEC_*_calibrated.fits"
+                )
             )
 
             for file_idx, file_item in enumerate(files_cal):
@@ -4387,8 +4393,10 @@ class Pipeline:
                     if esorex_path is not None:
                         data_static = esorex_path[:-10] + "share/esopipes/datastatic"
 
-                        if glob.glob(f"{data_static}/cr2re-*"):
-                            cr2re_folder = glob.glob(f"{data_static}/cr2re-*")[0]
+                        if sorted(glob.glob(f"{data_static}/cr2re-*")):
+                            cr2re_folder = sorted(glob.glob(f"{data_static}/cr2re-*"))[
+                                0
+                            ]
                             cr2re_data = sorted(glob.glob(f"{cr2re_folder}/*"))
                             tw_file = f"{cr2re_folder}/{science_wlen}_tw.fits"
 
@@ -5746,7 +5754,7 @@ class Pipeline:
                 str(self.product_folder)
                 + f"/obs_nodding/cr2res_obs_nodding_extracted{nod_ab}_*.fits"
             )
-            fits_files = glob.glob(input_files)
+            fits_files = sorted(glob.glob(input_files))
 
         elif input_folder == "util_extract_science":
             fits_files = list(self.file_dict[f"UTIL_EXTRACT_SCIENCE_{nod_ab}"].keys())
@@ -6845,10 +6853,12 @@ class Pipeline:
         )
 
         input_folder = self.product_folder / extraction_input
-        fits_files = Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")
-        n_exp = len(
-            list(Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits"))
+
+        fits_files = sorted(
+            Path(input_folder).glob(f"cr2res_combined{nod_ab}_*_extr2d.fits")
         )
+
+        n_exp = len(fits_files)
 
         print_msg = ""
         out_files = []
