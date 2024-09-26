@@ -1,22 +1,20 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrires"
-version = "0.3.2"
+version = "0.3.3"
 authors = [
     {name = "Tomas Stolker", email = "stolker@strw.leidenuniv.nl"},
     {name = "Rico Landman", email = "rlandman@strw.leidenuniv.nl"},
 ]
 description = "Data reduction pipeline for VLT/CRIRES+"
 readme = "README.rst"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.12"
 license = {text = "MIT License"}
 classifiers = [
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
@@ -27,12 +25,8 @@ Documentation = "https://pycrires.readthedocs.io"
 Repository = "https://github.com/tomasstolker/pycrires"
 Issues = "https://github.com/tomasstolker/pycrires/issues"
 
-[tool.setuptools]
-packages = []
-py-modules = []
-
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.package-data]
-example = ["keywords.txt", "calib_data/*.txt", "calib_data/*.dat"]
+example = ["*.txt", "*.dat"]
