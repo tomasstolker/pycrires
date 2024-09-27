@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrires"
-version = "0.3.3"
+version = "0.3.4"
 authors = [
     {name = "Tomas Stolker", email = "stolker@strw.leidenuniv.nl"},
     {name = "Rico Landman", email = "rlandman@strw.leidenuniv.nl"},
@@ -19,6 +19,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
+dynamic = ["dependencies"]
 
 [project.urls]
 Documentation = "https://pycrires.readthedocs.io"
@@ -26,7 +27,4 @@ Repository = "https://github.com/tomasstolker/pycrires"
 Issues = "https://github.com/tomasstolker/pycrires/issues"
 
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
-
-[tool.setuptools.package-data]
-example = ["*.txt", "*.dat"]
+dependencies = {file = "requirements.txt"}
