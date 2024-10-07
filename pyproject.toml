@@ -26,5 +26,11 @@ Documentation = "https://pycrires.readthedocs.io"
 Repository = "https://github.com/tomasstolker/pycrires"
 Issues = "https://github.com/tomasstolker/pycrires/issues"
 
+[tool.setuptools]
+packages = ["pycrires"]
+
 [tool.setuptools.dynamic]
 dependencies = {file = "requirements.txt"}
+
+[tool.setuptools.package-data]
+mypkg = ["*.json"]
