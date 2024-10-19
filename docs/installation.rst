@@ -3,7 +3,7 @@
 Installation
 ============
 
-``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.9/3.10/3.11 and is available from `PyPI <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
+``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.10/3.11/3.12 and is available from `PyPI <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
 
 Installation from PyPI
 ----------------------
