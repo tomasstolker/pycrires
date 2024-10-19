@@ -12,9 +12,13 @@ pypi:
 	python -m build
 	twine upload dist/*
 
+pypi-check:
+	python -m build
+	twine check dist/*
+
 pypi-test:
 	python -m build
-	twine upload --repository testpypi dist/*
+	twine upload -r testpypi dist/*
 
 docs:
 	rm -rf docs/api
