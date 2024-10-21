@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrires"
-version = "0.3.4"
+version = "0.4.0"
 authors = [
     {name = "Tomas Stolker", email = "stolker@strw.leidenuniv.nl"},
     {name = "Rico Landman", email = "rlandman@strw.leidenuniv.nl"},

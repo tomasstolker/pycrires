@@ -3,6 +3,6 @@ from pycrires.util import load_bt_settl_template
 
 __author__ = 'Tomas Stolker'
 __license__ = 'MIT'
-__version__ = '0.3.4'
+__version__ = '0.4.0'
 __maintainer__ = 'Tomas Stolker'
 __email__ = 'stolker@strw.leidenuniv.nl'
