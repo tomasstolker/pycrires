@@ -1469,7 +1469,7 @@ class Pipeline:
 
         print("Storing emission spectrum: calib/run_skycalc/sky_spec.dat")
 
-        emis_spec = np.column_stack((1e3 * sky_spec["lam"], 1e-3 * sky_spec["flux"]))
+        emis_spec = np.column_stack((sky_spec["lam"], 1e-3 * sky_spec["flux"]))
         header = "Wavelength (nm) - Flux (ph arcsec-2 m-2 s-1 nm-1)"
 
         out_file = self.calib_folder / "run_skycalc/sky_spec.dat"
@@ -1479,7 +1479,7 @@ class Pipeline:
 
         print("Storing transmission spectrum: calib/run_skycalc/transm_spec.dat")
 
-        transm_spec = np.column_stack((1e3 * sky_spec["lam"], sky_spec["trans"]))
+        transm_spec = np.column_stack((sky_spec["lam"], sky_spec["trans"]))
         header = "Wavelength (nm) - Transmission"
 
         out_file = self.calib_folder / "run_skycalc/transm_spec.dat"
