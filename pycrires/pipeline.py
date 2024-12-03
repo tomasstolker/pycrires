@@ -13,7 +13,7 @@ import urllib.request
 import warnings
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import astropy.constants as const
 import matplotlib as mpl
@@ -29,7 +29,10 @@ from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
 from PyAstronomy.pyasl import fastRotBroad
-from scipy import interpolate, ndimage, optimize, signal
+from scipy import ndimage
+from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
 from skimage.restoration import inpaint
 from typeguard import typechecked
 
@@ -5174,122 +5177,152 @@ class Pipeline:
 
         # Read extracted spectrum
 
-        fits_file = (
-            f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits"
+        input_folder = self.product_folder / "obs_nodding"
+
+        fits_files = sorted(
+            Path(input_folder).glob(f"cr2res_obs_nodding_extracted{nod_ab}_*.fits")
         )
 
-        if os.path.exists(fits_file):
-            print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}_corr.fits")
+        n_exp = len(fits_files)
 
-        else:
-            fits_file = f"{self.path}/product/cr2res_obs_nodding_extracted{nod_ab}.fits"
-            print(f"Input file: product/cr2res_obs_nodding_extracted{nod_ab}.fits")
+        print_msg = ""
+        out_files = []
 
-        print("\nOutput files:")
+        for fits_idx, fits_item in enumerate(fits_files):
+            print(f"Processing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
 
-        with fits.open(fits_file) as hdu_list:
-            # Copy header from the primary HDU
-            hdu_out = fits.HDUList([hdu_list[0]])
-            hdu_win = fits.HDUList([hdu_list[0]])
-            hdu_atm = fits.HDUList([hdu_list[0]])
-            hdu_con = fits.HDUList([hdu_list[0]])
-            hdu_cor = fits.HDUList([hdu_list[0]])
+            file_name = str(fits_item).split("/")[-2:]
+            print(f"   - Input spectrum: product/{file_name[-2]}/{file_name[-1]}")
 
-            # Initialize empty lists
-            wmin = []
-            wmax = []
-            map_chip = []
-            map_ext = [0]
-            wlc_fit = []
+            print("   - Output files:")
 
-            # Initialize counter for order/detector
-            count = 1
+            with fits.open(fits_item) as hdu_list:
+                # Copy header from the primary HDU
+                hdu_out = fits.HDUList([hdu_list[0]])
+                hdu_win = fits.HDUList([hdu_list[0]])
+                hdu_atm = fits.HDUList([hdu_list[0]])
+                hdu_con = fits.HDUList([hdu_list[0]])
+                hdu_cor = fits.HDUList([hdu_list[0]])
 
-            # Loop over 3 detectors
-            for i_det in range(3):
-                # Get detector data
-                data = hdu_list[f"CHIP{i_det+1}.INT1"].data
+                # Initialize empty lists
+                wmin = []
+                wmax = []
+                map_chip = []
+                map_ext = [0]
+                wlc_fit = []
 
-                # Get all spectral orders
-                spec_orders = np.sort([i[:5] for i in data.dtype.names if "WL" in i])
+                # Initialize counter for order/detector
+                count = 1
 
-                # Loop over spectral orders
-                for item in spec_orders:
-                    # Extract WL, SPEC, and ERR for given order/detector
-                    wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_WL"]
-                    spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_SPEC"]
-                    err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_ERR"]
+                # Loop over 3 detectors
+                for i_det in range(3):
+                    # Get detector data
+                    data = hdu_list[f"CHIP{i_det+1}.INT1"].data
 
-                    spec = np.nan_to_num(spec)
-                    err = np.nan_to_num(err)
+                    # Get all spectral orders
+                    spec_orders = np.sort(
+                        [i[:5] for i in data.dtype.names if "WL" in i]
+                    )
 
-                    # Convert wavelength from nm to um
-                    wavel *= 1e-3
+                    # Loop over spectral orders
+                    for item in spec_orders:
+                        # Extract WL, SPEC, and ERR for given order/detector
+                        wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_WL"]
+                        spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_SPEC"]
+                        err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_ERR"]
 
-                    # Create a FITS columns for WAVE, SPEC, and ERR
-                    col1 = fits.Column(name="WAVE", format="D", array=wavel)
-                    col2 = fits.Column(name="SPEC", format="D", array=spec)
-                    col3 = fits.Column(name="ERR", format="D", array=err)
+                        spec = np.nan_to_num(spec)
+                        err = np.nan_to_num(err)
 
-                    # Create FITS table with WAVE, SPEC, and ERR
-                    table_hdu = fits.BinTableHDU.from_columns([col1, col2, col3])
+                        # Convert wavelength from nm to um
+                        wavel *= 1e-3
 
-                    # Append table HDU to output of HDU list
-                    hdu_out.append(table_hdu)
+                        # Create a FITS columns for WAVE, SPEC, and ERR
+                        col1 = fits.Column(name="WAVE", format="D", array=wavel)
+                        col2 = fits.Column(name="SPEC", format="D", array=spec)
+                        col3 = fits.Column(name="ERR", format="D", array=err)
 
-                    # Minimum and maximum wavelengths for a given order
-                    wmin.append(np.min(wavel))
-                    wmax.append(np.max(wavel))
+                        # Create FITS table with WAVE, SPEC, and ERR
+                        table_hdu = fits.BinTableHDU.from_columns([col1, col2, col3])
 
-                    # Mapping for order/detector
-                    map_chip.append(count)
-                    map_ext.append(count)
-                    wlc_fit.append(1)
+                        # Append table HDU to output of HDU list
+                        hdu_out.append(table_hdu)
 
-                    count += 1
+                        # Minimum and maximum wavelengths for a given order
+                        wmin.append(np.min(wavel))
+                        wmax.append(np.max(wavel))
 
-            # Create FITS file with SCIENCE
-            print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits")
-            hdu_out.writeto(output_dir / f"SCIENCE_{nod_ab}.fits", overwrite=True)
+                        # Mapping for order/detector
+                        map_chip.append(count)
+                        map_ext.append(count)
+                        wlc_fit.append(1)
 
-            # Create FITS file with WAVE_INCLUDE
-            col_wmin = fits.Column(name="LOWER_LIMIT", format="D", array=wmin)
-            col_wmax = fits.Column(name="UPPER_LIMIT", format="D", array=wmax)
-            col_map = fits.Column(name="MAPPED_TO_CHIP", format="I", array=map_chip)
-            col_wlc = fits.Column(name="WLC_FIT_FLAG", format="I", array=wlc_fit)
-            col_cont = fits.Column(name="CONT_FIT_FLAG", format="I", array=wlc_fit)
-            columns = [col_wmin, col_wmax, col_map, col_wlc, col_cont]
-            table_hdu = fits.BinTableHDU.from_columns(columns)
-            hdu_win.append(table_hdu)
-            print(f"   - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}.fits")
-            hdu_win.writeto(output_dir / f"WAVE_INCLUDE_{nod_ab}.fits", overwrite=True)
+                        count += 1
 
-            # Create FITS file with MAPPING_ATMOSPHERIC
-            name = "ATM_PARAMETERS_EXT"
-            col_atm = fits.Column(name=name, format="K", array=map_ext)
-            table_hdu = fits.BinTableHDU.from_columns([col_atm])
-            hdu_atm.append(table_hdu)
-            print(f"   - calib/molecfit_input/MAPPING_ATMOSPHERIC_{nod_ab}.fits")
-            fits_file = output_dir / f"MAPPING_ATMOSPHERIC_{nod_ab}.fits"
-            hdu_atm.writeto(fits_file, overwrite=True)
+                # Create FITS file with SCIENCE
+                print(
+                    f"      - calib/molecfit_input/SCIENCE_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                hdu_out.writeto(
+                    output_dir / f"SCIENCE_{nod_ab}_{fits_idx:03d}.fits", overwrite=True
+                )
 
-            # Create FITS file with MAPPING_CONVOLVE
-            name = "LBLRTM_RESULTS_EXT"
-            col_conv = fits.Column(name=name, format="K", array=map_ext)
-            table_hdu = fits.BinTableHDU.from_columns([col_conv])
-            hdu_con.append(table_hdu)
-            print(f"   - calib/molecfit_input/MAPPING_CONVOLVE_{nod_ab}.fits")
-            fits_file = output_dir / f"MAPPING_CONVOLVE_{nod_ab}.fits"
-            hdu_con.writeto(fits_file, overwrite=True)
+                # Create FITS file with WAVE_INCLUDE
+                col_wmin = fits.Column(name="LOWER_LIMIT", format="D", array=wmin)
+                col_wmax = fits.Column(name="UPPER_LIMIT", format="D", array=wmax)
+                col_map = fits.Column(name="MAPPED_TO_CHIP", format="I", array=map_chip)
+                col_wlc = fits.Column(name="WLC_FIT_FLAG", format="I", array=wlc_fit)
+                col_cont = fits.Column(name="CONT_FIT_FLAG", format="I", array=wlc_fit)
+                columns = [col_wmin, col_wmax, col_map, col_wlc, col_cont]
+                table_hdu = fits.BinTableHDU.from_columns(columns)
+                hdu_win.append(table_hdu)
+                print(
+                    f"      - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                hdu_win.writeto(
+                    output_dir / f"WAVE_INCLUDE_{nod_ab}_{fits_idx:03d}.fits",
+                    overwrite=True,
+                )
 
-            # Create FITS file with MAPPING_CORRECT
-            name = "TELLURIC_CORR_EXT"
-            col_corr = fits.Column(name=name, format="K", array=map_ext)
-            table_hdu = fits.BinTableHDU.from_columns([col_corr])
-            hdu_cor.append(table_hdu)
-            print(f"   - calib/molecfit_input/MAPPING_CORRECT_{nod_ab}.fits")
-            fits_file = output_dir / f"MAPPING_CORRECT_{nod_ab}.fits"
-            hdu_cor.writeto(fits_file, overwrite=True)
+                # Create FITS file with MAPPING_ATMOSPHERIC
+                name = "ATM_PARAMETERS_EXT"
+                col_atm = fits.Column(name=name, format="K", array=map_ext)
+                table_hdu = fits.BinTableHDU.from_columns([col_atm])
+                hdu_atm.append(table_hdu)
+                print(
+                    f"      - calib/molecfit_input/MAPPING_ATMOSPHERIC_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                fits_file = (
+                    output_dir / f"MAPPING_ATMOSPHERIC_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                hdu_atm.writeto(fits_file, overwrite=True)
+
+                # Create FITS file with MAPPING_CONVOLVE
+                name = "LBLRTM_RESULTS_EXT"
+                col_conv = fits.Column(name=name, format="K", array=map_ext)
+                table_hdu = fits.BinTableHDU.from_columns([col_conv])
+                hdu_con.append(table_hdu)
+                print(
+                    f"      - calib/molecfit_input/MAPPING_CONVOLVE_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                fits_file = (
+                    output_dir / f"MAPPING_CONVOLVE_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                hdu_con.writeto(fits_file, overwrite=True)
+
+                # Create FITS file with MAPPING_CORRECT
+                name = "TELLURIC_CORR_EXT"
+                col_corr = fits.Column(name=name, format="K", array=map_ext)
+                table_hdu = fits.BinTableHDU.from_columns([col_corr])
+                hdu_cor.append(table_hdu)
+                print(
+                    f"      - calib/molecfit_input/MAPPING_CORRECT_{nod_ab}_{fits_idx:03d}.fits"
+                )
+                fits_file = output_dir / f"MAPPING_CORRECT_{nod_ab}_{fits_idx:03d}.fits"
+                hdu_cor.writeto(fits_file, overwrite=True)
+
+            if fits_idx + 1 < len(fits_files):
+                print()
 
     @typechecked
     def molecfit_model(self, nod_ab: str = "A", verbose: bool = True) -> None:
@@ -5320,21 +5353,6 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Create SOF file
-
-        print("Creating SOF file:")
-
-        sof_file = Path(output_dir / "files.sof")
-
-        with open(sof_file, "w", encoding="utf-8") as sof_open:
-            print(f"   - calib/molecfit_input/SCIENCE_{nod_ab}.fits SCIENCE")
-            sof_open.write(f"{input_dir / f'SCIENCE_{nod_ab}.fits'} SCIENCE\n")
-
-            print(f"   - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}.fits WAVE_INCLUDE")
-            sof_open.write(
-                f"{input_dir / f'WAVE_INCLUDE_{nod_ab}.fits'} WAVE_INCLUDE\n"
-            )
-
         # Create EsoRex configuration file if not found
 
         self._create_config("molecfit_model", "molecfit_model", verbose)
@@ -5346,32 +5364,72 @@ class Pipeline:
         with open(config_file, "r", encoding="utf-8") as open_config:
             config_text = open_config.readlines()
 
-        print("\nSelected molecules:")
+        print("Selected molecules:")
         for line_item in config_text:
             if line_item[:10] == "LIST_MOLEC":
                 for mol_item in line_item[11:].split(","):
                     print(f"   - {mol_item}")
 
-        # Run EsoRex
+        # Read extracted spectrum
 
-        esorex = [
-            "esorex",
-            f"--recipe-config={config_file}",
-            f"--output-dir={output_dir}",
-            "molecfit_model",
-            sof_file,
-        ]
+        fits_files = sorted(Path(input_dir).glob(f"SCIENCE_{nod_ab}_*.fits"))
 
-        if verbose:
-            stdout = None
-        else:
-            stdout = subprocess.DEVNULL
-            print("Running EsoRex...", end="", flush=True)
+        n_exp = len(fits_files)
 
-        subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+        print_msg = ""
+        out_files = []
 
-        if not verbose:
-            print(" [DONE]")
+        for fits_idx, fits_item in enumerate(fits_files):
+            print(f"Processing exposure #{fits_idx+1}/{n_exp} of nod {nod_ab}:")
+
+            file_name = str(fits_item).split("/")[-2:]
+            print(f"   - Input spectrum: product/{file_name[-2]}/{file_name[-1]}")
+
+            # Create SOF file
+
+            print("   - Creating SOF file:")
+
+            sof_file = Path(output_dir / f"files_{nod_ab}_{fits_idx:03d}.sof")
+
+            with open(sof_file, "w", encoding="utf-8") as sof_open:
+                print(
+                    f"      - calib/molecfit_input/SCIENCE_{nod_ab}_{fits_idx:03d}.fits SCIENCE"
+                )
+                sof_open.write(
+                    f"{input_dir / f'SCIENCE_{nod_ab}_{fits_idx:03d}.fits'} SCIENCE\n"
+                )
+
+                print(
+                    f"      - calib/molecfit_input/WAVE_INCLUDE_{nod_ab}_"
+                    f"{fits_idx:03d}.fits WAVE_INCLUDE"
+                )
+                sof_open.write(
+                    f"{input_dir / f'WAVE_INCLUDE_{nod_ab}_{fits_idx:03d}.fits'} WAVE_INCLUDE\n"
+                )
+
+            # Run EsoRex
+
+            esorex = [
+                "esorex",
+                f"--recipe-config={config_file}",
+                f"--output-dir={output_dir}",
+                "molecfit_model",
+                sof_file,
+            ]
+
+            if verbose:
+                stdout = None
+            else:
+                stdout = subprocess.DEVNULL
+                print("Running EsoRex...", end="", flush=True)
+
+            subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
+
+            if not verbose:
+                print(" [DONE]")
+
+            if fits_idx + 1 < len(fits_files):
+                print()
 
         # Write updated dictionary to JSON file
 
@@ -5573,7 +5631,7 @@ class Pipeline:
         telluric_template: np.ndarray,
         accuracy: float = 0.002,
         n_grid: int = 51,
-        window_length: int = 201,
+        window_length: Union[int, np.int64] = 201,
     ) -> Tuple[
         np.ndarray, Tuple[float, float, float], Tuple[np.int_, np.int_, np.int_]
     ]:
@@ -5607,7 +5665,7 @@ class Pipeline:
             TODO
         """
 
-        template_interp = interpolate.interp1d(
+        template_interp = interp1d(
             telluric_template[:, 0],
             telluric_template[:, 1],
             kind="linear",
@@ -5620,8 +5678,10 @@ class Pipeline:
         spec = spec[10:-10]
         wavel = wavel[10:-10]
         nans = np.isnan(spec) + (spec < 0.0)
+
         window_length = min([window_length, 2 * (np.sum(~nans) // 2) - 1])
-        continuum = signal.savgol_filter(
+
+        continuum = savgol_filter(
             spec[~nans], window_length=window_length, polyorder=2, mode="interp"
         )
 
@@ -5741,7 +5801,7 @@ class Pipeline:
 
         transm_spec = np.loadtxt(self.calib_folder / "run_skycalc/transm_spec.dat")
 
-        # transm_interp = interpolate.interp1d(
+        # transm_interp = interp1d(
         #     transm_spec[:, 0], transm_spec[:, 1], kind="linear", bounds_error=True
         # )
 
@@ -6746,14 +6806,14 @@ class Pipeline:
 
                         # Interpolate the spectrum and error for the new coordinates
                         new_spec = [
-                            interpolate.interp1d(
+                            interp1d(
                                 Y, image[:, x - 1], fill_value=0, bounds_error=False
                             )(y)
                             for (x, y) in zip(xs, ys)
                         ]
 
                         new_err = [
-                            interpolate.interp1d(
+                            interp1d(
                                 Y, errors[:, x - 1], fill_value=0, bounds_error=False
                             )(y)
                             for (x, y) in zip(xs, ys)
@@ -6761,7 +6821,7 @@ class Pipeline:
 
                         # Correct for the slit tilt
                         new_xs = tilt_p0 + tilt_p1 * y0 + tilt_p2 * y0**2
-                        new_spec = interpolate.interp1d(
+                        new_spec = interp1d(
                             xs, new_spec, fill_value=np.nan, bounds_error=False
                         )(new_xs)
 
@@ -6939,9 +6999,7 @@ class Pipeline:
                         nans = np.isnan(y_data)
                         y_data[nans] = 0
 
-                        result = optimize.curve_fit(
-                            _gaussian, x_data, y_data, p0=guess
-                        )[0]
+                        result = curve_fit(_gaussian, x_data, y_data, p0=guess)[0]
 
                         print("\r" + len(print_msg) * " ", end="")
 
@@ -7550,9 +7608,9 @@ class Pipeline:
                         shifted_waves = betas[:, np.newaxis] * waves[np.newaxis, :]
 
                         if vsini_item is None:
-                            model_interp = interpolate.interp1d(model_wavel, model_flux)
+                            model_interp = interp1d(model_wavel, model_flux)
                         else:
-                            model_interp = interpolate.interp1d(model_wavel, broad_flux)
+                            model_interp = interp1d(model_wavel, broad_flux)
 
                         template = model_interp(shifted_waves)
 
