@@ -29,7 +29,7 @@ from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
 from PyAstronomy.pyasl import fastRotBroad
-from scipy import ndimage
+from scipy.ndimage import gaussian_filter, shift
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
@@ -74,7 +74,7 @@ class Pipeline:
             Specific spectral setting for which to process the calibrations.
             This keyword is usefully if one just wants to create calibrations
             without any SCIENCE frames. The default value is ``None``, in
-            which case the spectral setting is infered from the SCIENCE
+            which case the spectral setting is inferred from the SCIENCE
             frames.
 
         Returns
@@ -1460,11 +1460,11 @@ class Pipeline:
 
         sigma_lsf_gauss_filter = sigma_lsf / spacing
 
-        sky_spec["flux"] = ndimage.gaussian_filter(
+        sky_spec["flux"] = gaussian_filter(
             sky_spec["flux"], sigma=sigma_lsf_gauss_filter, mode="nearest"
         )
 
-        sky_spec["trans"] = ndimage.gaussian_filter(
+        sky_spec["trans"] = gaussian_filter(
             sky_spec["trans"], sigma=sigma_lsf_gauss_filter, mode="nearest"
         )
 
@@ -1489,7 +1489,7 @@ class Pipeline:
         np.savetxt(out_file, transm_spec, header=header)
 
     @typechecked
-    def cal_dark(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def cal_dark(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_dark``.
 
@@ -1628,7 +1628,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cal_flat(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def cal_flat(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_flat``.
 
@@ -1831,7 +1831,7 @@ class Pipeline:
                 json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cal_detlin(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def cal_detlin(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_detlin``.
 
@@ -1955,7 +1955,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def cal_wave(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def cal_wave(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_wave``.
 
@@ -2175,7 +2175,7 @@ class Pipeline:
 
     @typechecked
     def util_calib(
-        self, calib_type: str, verbose: bool = True, create_sof: bool = True
+        self, calib_type: str, verbose: bool = False, create_sof: bool = True
     ) -> None:
         """
         Method for running ``cr2res_util_calib``.
@@ -2523,7 +2523,7 @@ class Pipeline:
 
     @typechecked
     def util_trace(
-        self, plot_trace: bool = False, verbose: bool = True, create_sof: bool = True
+        self, plot_trace: bool = False, verbose: bool = False, create_sof: bool = True
     ) -> None:
         """
         Method for running ``cr2res_util_trace``.
@@ -2678,7 +2678,7 @@ class Pipeline:
 
     @typechecked
     def util_slit_curv(
-        self, plot_trace: bool = False, verbose: bool = True, create_sof: bool = True
+        self, plot_trace: bool = False, verbose: bool = False, create_sof: bool = True
     ) -> None:
         """
         Method for running ``cr2res_util_slit_curv``.
@@ -2841,10 +2841,16 @@ class Pipeline:
 
     @typechecked
     def util_extract(
-        self, calib_type: str, verbose: bool = True, create_sof: bool = True
+        self, calib_type: str, verbose: bool = False, create_sof: bool = True
     ) -> None:
         """
-        Method for running ``cr2res_util_extract``.
+        Method for running ``cr2res_util_extract``. If one of the
+        orders lies partially outside the detector, then NaNs will be
+        stored for that spectral order. Depending if the full spatial
+        extent is needed, it is possible to adjust the
+        `cr2res.cr2res_util_extract.slit_frac`
+        parameter in the configuration files that is created after
+        the first execution of ``util_extract`` (see `config` folder).
 
         Parameters
         ----------
@@ -3063,7 +3069,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_normflat(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def util_normflat(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_normflat``.
 
@@ -3212,7 +3218,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_bpm_merge(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def util_bpm_merge(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_bpm_merge``.
 
@@ -3409,7 +3415,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def util_genlines(self, verbose: bool = True, create_sof: bool = True) -> None:
+    def util_genlines(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_genlines``. Generate
         spectrum calibration FITS tables.
@@ -3621,7 +3627,7 @@ class Pipeline:
         calib_type: str,
         poly_deg: int = 0,
         wl_err: float = 0.1,
-        verbose: bool = True,
+        verbose: bool = False,
         create_sof: bool = True,
     ) -> None:
         """
@@ -3898,7 +3904,7 @@ class Pipeline:
 
     @typechecked
     def obs_staring(
-        self, verbose: bool = True, check_existing: bool = True, create_sof: bool = True
+        self, verbose: bool = False, check_existing: bool = True, create_sof: bool = True
     ) -> None:
         """
         Method for running ``cr2res_obs_staring``.
@@ -4070,7 +4076,7 @@ class Pipeline:
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
         check_existing: bool = False,
-        verbose: bool = True,
+        verbose: bool = False,
         create_sof: bool = True,
     ) -> None:
         """
@@ -4674,7 +4680,7 @@ class Pipeline:
     @typechecked
     def obs_nodding_irregular(
         self,
-        verbose: bool = True,
+        verbose: bool = False,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
         check_existing: bool = False,
@@ -5152,8 +5158,8 @@ class Pipeline:
         Method for converting the extracted spectra into input files
         for `Molecfit`. The content of this method has been adapted
         from the ``cr2res_drs2molecfit.py`` code that is included
-        with the EsoRex pipeline for CRIRES+
-        (see https://www.eso.org/sci/software/pipelines/).
+        with the EsoRex pipeline for CRIRES+ (see
+        https://www.eso.org/sci/software/pipelines/cr2res/cr2res-pipe-recipes.html).
 
         Parameters
         ----------
@@ -5208,7 +5214,7 @@ class Pipeline:
                 wmin = []
                 wmax = []
                 map_chip = []
-                map_ext = [0]
+                atm_ext = []
                 wlc_fit = []
 
                 # Initialize counter for order/detector
@@ -5225,11 +5231,11 @@ class Pipeline:
                     )
 
                     # Loop over spectral orders
-                    for item in spec_orders:
+                    for spec_item in spec_orders:
                         # Extract WL, SPEC, and ERR for given order/detector
-                        wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_WL"]
-                        spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_SPEC"]
-                        err = hdu_list[f"CHIP{i_det+1}.INT1"].data[item + "_ERR"]
+                        wavel = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_item + "_WL"]
+                        spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_item + "_SPEC"]
+                        err = hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_item + "_ERR"]
 
                         spec = np.nan_to_num(spec)
                         err = np.nan_to_num(err)
@@ -5254,7 +5260,12 @@ class Pipeline:
 
                         # Mapping for order/detector
                         map_chip.append(count)
-                        map_ext.append(count)
+
+                        if count == 1:
+                            atm_ext.append(0)
+                        else:
+                            atm_ext.append(1)
+
                         wlc_fit.append(1)
 
                         count += 1
@@ -5286,7 +5297,7 @@ class Pipeline:
 
                 # Create FITS file with MAPPING_ATMOSPHERIC
                 name = "ATM_PARAMETERS_EXT"
-                col_atm = fits.Column(name=name, format="K", array=map_ext)
+                col_atm = fits.Column(name=name, format="K", array=atm_ext)
                 table_hdu = fits.BinTableHDU.from_columns([col_atm])
                 hdu_atm.append(table_hdu)
                 print(
@@ -5299,7 +5310,7 @@ class Pipeline:
 
                 # Create FITS file with MAPPING_CONVOLVE
                 name = "LBLRTM_RESULTS_EXT"
-                col_conv = fits.Column(name=name, format="K", array=map_ext)
+                col_conv = fits.Column(name=name, format="K", array=atm_ext)
                 table_hdu = fits.BinTableHDU.from_columns([col_conv])
                 hdu_con.append(table_hdu)
                 print(
@@ -5312,7 +5323,7 @@ class Pipeline:
 
                 # Create FITS file with MAPPING_CORRECT
                 name = "TELLURIC_CORR_EXT"
-                col_corr = fits.Column(name=name, format="K", array=map_ext)
+                col_corr = fits.Column(name=name, format="K", array=atm_ext)
                 table_hdu = fits.BinTableHDU.from_columns([col_corr])
                 hdu_cor.append(table_hdu)
                 print(
@@ -5325,7 +5336,7 @@ class Pipeline:
                 print()
 
     @typechecked
-    def molecfit_model(self, nod_ab: str = "A", verbose: bool = True) -> None:
+    def molecfit_model(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_model``.
 
@@ -5353,6 +5364,11 @@ class Pipeline:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        # Print input parameters
+
+        print(f"Nod: {nod_ab}")
+        print(f"Verbose: {verbose}")
+
         # Create EsoRex configuration file if not found
 
         self._create_config("molecfit_model", "molecfit_model", verbose)
@@ -5364,7 +5380,7 @@ class Pipeline:
         with open(config_file, "r", encoding="utf-8") as open_config:
             config_text = open_config.readlines()
 
-        print("Selected molecules:")
+        print("\nSelected molecules:")
         for line_item in config_text:
             if line_item[:10] == "LIST_MOLEC":
                 for mol_item in line_item[11:].split(","):
@@ -5421,7 +5437,7 @@ class Pipeline:
                 stdout = None
             else:
                 stdout = subprocess.DEVNULL
-                print("Running EsoRex...", end="", flush=True)
+                print("   - Running EsoRex...", end="", flush=True)
 
             subprocess.run(esorex, cwd=output_dir, stdout=stdout, check=True)
 
@@ -5437,7 +5453,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def molecfit_calctrans(self, nod_ab: str = "A", verbose: bool = True) -> None:
+    def molecfit_calctrans(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_calctrans``.
 
@@ -5540,7 +5556,7 @@ class Pipeline:
             json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
-    def molecfit_correct(self, nod_ab: str = "A", verbose: bool = True) -> None:
+    def molecfit_correct(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_correct``.
 
@@ -5649,7 +5665,8 @@ class Pipeline:
         accuracy : float
             TODO
         n_grid : int
-            TODO
+            Number of grid points that will be tested for each of the
+            three parameters of the quadratic function.
         window_length : int
             TODO
         spec : np.ndarray
@@ -5709,6 +5726,7 @@ class Pipeline:
         ]
 
         mean_wavel = np.mean(wavel)
+
         wl_matrix = (
             a_grid * (used_wavel[np.newaxis, np.newaxis, np.newaxis, :] - mean_wavel)
             + mean_wavel
@@ -5716,6 +5734,7 @@ class Pipeline:
             + c_grid
             * (used_wavel[np.newaxis, np.newaxis, np.newaxis, :] - mean_wavel) ** 2
         )
+
         print("Interpolating telluric template...")
         template = template_interp(wl_matrix) - 1.0
 
@@ -5746,21 +5765,28 @@ class Pipeline:
         create_plots: bool = False,
     ) -> None:
         """
-        Method for correcting the wavelength solution with a linear
+        Method for correcting the wavelength solution with a quadratic
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
-        :func:`~pycrires.pipeline.Pipeline.run_skycalc`.
+        :func:`~pycrires.pipeline.Pipeline.run_skycalc`. The
+        ``accuracy`` can be iteratively increased by also adjusting
+        the ``input_folder``.
 
         Parameters
         ----------
         nod_ab : str
             Nod position with the spectra of which the wavelength
             solution will be corrected.
+        input_folder : str
+            Input folder from where the spectra will be read.
         accuracy : float
             Desired accuracy in nm of the wavelength solution.
             This will be used to generate the grid on which the
             correlation with a telluric spectrum is calculated
             (default: 0.01 nm).
+        n_grid : int
+            Number of grid points that will be tested for each of the
+            three parameters of the quadratic function (default: 51).
         window_length : int
             Width of the kernel (in number of pixels) that is used
             for estimating the continuum by smoothing with the 2nd
@@ -5774,8 +5800,15 @@ class Pipeline:
             deviation is smaller than ``minimum_strength``), the
             original wavelength solution will be saved (default:
             0.005).
+        collapse_exposures: bool
+            If ``True``, the wavelength correction will be calculated
+            using the summed spectra over all exposures,
+            improving the S/N of the spectra.
         create_plots : bool
-            Create plots with the correlation maps (default: False).
+            Store plots with the 2D cross-correlation maps
+            (default: False). These maps do not show the quadratic
+            term, for which the best-fit value is used for each
+            pair of parameters.
 
         Returns
         -------
@@ -5816,21 +5849,22 @@ class Pipeline:
             )
             fits_files = sorted(glob.glob(input_files))
 
+        elif input_folder == "correct_wavelengths":
+            fits_files = list(self.file_dict[f"CORRECT_WAVELENGTHS_{nod_ab}"].keys())
+
         elif input_folder == "util_extract_science":
             fits_files = list(self.file_dict[f"UTIL_EXTRACT_SCIENCE_{nod_ab}"].keys())
 
         # Hacky way to only do the wavelength solution once
         # when collapse_exposures = True
         if collapse_exposures:
-            N_files = 1
+            n_files = 1
         else:
-            N_files = len(fits_files) + 1
+            n_files = len(fits_files)
 
-        for fits_file in fits_files[:N_files]:
-            print(f"\nReading spectra from {fits_file}...", end="", flush=True)
-
-            hdu_list = fits.open(fits_file)
-
+        for file_idx in range(n_files):
+            print(f"\nReading spectra from {fits_files[file_idx]}...", end="", flush=True)
+            hdu_list = fits.open(fits_files[file_idx])
             print(" [DONE]")
 
             if create_plots:
@@ -5863,7 +5897,9 @@ class Pipeline:
                     wl_mask = (transm_spec[:, 0] > np.min(wavel)) * (
                         transm_spec[:, 0] < np.max(wavel)
                     )
+
                     template_std = np.std(transm_spec[wl_mask, 1])
+
                     if template_std > minimum_strength:
                         if collapse_exposures:
                             tot_flux = 0
@@ -5885,21 +5921,25 @@ class Pipeline:
                                 tot_flux,
                                 wavel,
                                 transm_spec,
-                                accuracy,
-                                n_grid,
-                                window_length,
+                                accuracy=accuracy,
+                                n_grid=n_grid,
+                                window_length=window_length,
                             )
 
                             # Save corrected wavelengths to all files for this order
                             for save_file in fits_files:
-                                out_file = output_dir / (
-                                    Path(save_file).stem + "_corr.fits"
-                                )
-                                if i_det == 0 and order == 0:
-                                    save_hdu_list = fits.open(save_file)
+                                if input_folder == "correct_wavelengths":
+                                    out_file = output_dir / Path(save_file).name
+
                                 else:
-                                    save_hdu_list = fits.open(out_file)
+                                    out_file = output_dir / (
+                                        Path(save_file).stem + "_corr.fits"
+                                    )
+
+                                save_hdu_list = fits.open(out_file)
+
                                 mean_wavel = np.mean(wavel)
+
                                 save_hdu_list[f"CHIP{i_det+1}.INT1"].data[
                                     spec_name + "_WL"
                                 ] = (
@@ -5910,6 +5950,13 @@ class Pipeline:
                                 )
 
                                 save_hdu_list.writeto(out_file, overwrite=True)
+
+                                self._update_files(
+                                    f"CORRECT_WAVELENGTHS_{nod_ab}",
+                                    str(out_file),
+                                )
+
+                                save_hdu_list.close()
 
                         else:
                             spec = hdu_list[f"CHIP{i_det+1}.INT1"].data[
@@ -5926,14 +5973,38 @@ class Pipeline:
                                 spec,
                                 wavel,
                                 transm_spec,
-                                accuracy,
-                                window_length,
+                                accuracy=accuracy,
+                                window_length=window_length,
                             )
+
+                            if input_folder == "correct_wavelengths":
+                                out_file = output_dir / Path(fits_files[file_idx]).name
+                            else:
+                                out_file = output_dir / (Path(fits_files[file_idx]).stem + "_corr.fits")
+
+                            save_hdu_list = fits.open(out_file)
+
+                            mean_wavel = np.mean(wavel)
+
+                            save_hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                                opt_a * (wavel - mean_wavel)
+                                + mean_wavel
+                                + opt_b
+                                + opt_c * (wavel - mean_wavel) ** 2
+                            )
+
+                            save_hdu_list.writeto(out_file, overwrite=True)
+
+                            self._update_files(f"CORRECT_WAVELENGTHS_{nod_ab}", str(out_file))
+
+                            save_hdu_list.close()
+
                         # Plot correlation map
                         if create_plots:
                             plt.sca(axes[order, i_det])
                             plt.title(f"Detector {i_det+1}, order {order}")
                             dlam = wavel[-1] - np.mean(wavel)
+
                             plt.imshow(
                                 cross_corr[:, :, opt_idx[2]].T,
                                 extent=[
@@ -5945,6 +6016,7 @@ class Pipeline:
                                 origin="lower",
                                 aspect="auto",
                             )
+
                             plt.colorbar()
                             plt.axhline(opt_a, ls="--", color="white")
                             plt.axvline(opt_b, ls="--", color="white")
@@ -5967,25 +6039,14 @@ class Pipeline:
                         f"+ {opt_a:.4f} * lambda + {opt_c:.4f} * lambda^2'"
                     )
 
-            # Write the corrected spectra to a new FITS file
-            if not collapse_exposures:
-                out_file = output_dir / (Path(fits_file).stem + "_corr.fits")
-                print(f"\nStoring corrected spectra: {out_file}")
-
-                hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
-                    opt_a * (wavel - mean_wavel)
-                    + mean_wavel
-                    + opt_b
-                    + opt_c * (wavel - mean_wavel) ** 2
-                )
-                hdu_list.writeto(out_file, overwrite=True)
-
             # Save the correlation plots
             if create_plots:
                 if input_folder == "obs_nodding":
-                    out_label = fits_file[-10:-5]
+                    out_label = fits_files[file_idx][-10:-5]
+                elif input_folder == "correct_wavelengths":
+                    out_label = fits_files[file_idx][-15:-10]
                 elif input_folder == "util_extract_science":
-                    out_label = fits_file[-17:-12]
+                    out_label = fits_files[file_idx][-17:-12]
 
                 fig.add_subplot(111, frame_on=False)
                 plt.tick_params(labelcolor="none", bottom=False, left=False)
@@ -5994,37 +6055,46 @@ class Pipeline:
                 plt.tight_layout()
                 plt.savefig(f"{output_dir}/correlation_map_{out_label}.png")
 
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
+
     @typechecked
     def correct_wavelengths_2d(
         self,
         nod_ab: str = "A",
+        input_folder="fit_gaussian",
         accuracy: float = 0.002,
-        window_length: int = 201,
         n_grid: int = 51,
+        window_length: int = 201,
         minimum_strength: float = 0.005,
         collapse_spatially: bool = True,
         collapse_exposures: bool = True,
-        input_folder="fit_gaussian",
         create_plots: bool = True,
     ) -> None:
         """
-        Method for correcting the wavelength solution with a linear
+        Method for correcting the wavelength solution with a quadratic
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
         :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This function
         can be applied to 2D extracted spectra, when one wants to keep
-        the spatial information.
+        the spatial information. The ``accuracy`` can be iteratively
+        increased by also adjusting the ``input_folder``.
 
         Parameters
         ----------
         nod_ab : str
             Nod position with the spectra of which the wavelength
             solution will be corrected.
+        input_folder : str
+            Input folder from where the spectra will be read.
         accuracy : float
             Desired accuracy in nm of the wavelength solution.
             This will be used to generate the grid on which the
             correlation with a telluric spectrum is calculated
             (default: 0.01 nm).
+        n_grid : int
+            Number of grid points that will be tested for each of the
+            three parameters of the quadratic function (default: 51).
         window_length : int
             Width of the kernel (in number of pixels) that is used
             for estimating the continuum by smoothing with the 2nd
@@ -6045,9 +6115,15 @@ class Pipeline:
             result in slight errors in the wavelength solution
             off-axis.
         collapse_exposures: bool
-            If True, the wavelength correction will be calculated
+            If ``True``, the wavelength correction will be calculated
             using the summed spectra over all exposures,
             improving the S/N of the spectra.
+        create_plots : bool
+            Store plots with the 2D cross-correlation maps
+            (default: False). These maps do not show the quadratic
+            term, for which the best-fit value is used for each
+            pair of parameters.
+
         Returns
         -------
         NoneType
@@ -6161,9 +6237,9 @@ class Pipeline:
                                 spec,
                                 wavel,
                                 transm_spec,
-                                accuracy,
-                                n_grid,
-                                window_length,
+                                accuracy=accuracy,
+                                n_grid=n_grid,
+                                window_length=window_length,
                             )
 
                             print(
@@ -6189,6 +6265,7 @@ class Pipeline:
                                         save_hdu_list = fits.open(out_file)
 
                                     mean_wavel = np.mean(wavel)
+
                                     save_hdu_list["WAVE"].data[
                                         det_idx, order_idx, :
                                     ] = (
@@ -6197,7 +6274,9 @@ class Pipeline:
                                         + opt_p[1] * (wavel - mean_wavel)
                                         + opt_p[2] * (wavel - mean_wavel) ** 2
                                     )
+
                                     save_hdu_list.writeto(out_file, overwrite=True)
+
                                     self._update_files(
                                         f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
                                         str(out_file),
@@ -6215,6 +6294,7 @@ class Pipeline:
                                         save_hdu_list = fits.open(out_file)
 
                                     mean_wavel = np.mean(wavel)
+
                                     save_hdu_list["WAVE"].data[
                                         det_idx, order_idx, row
                                     ] = (
@@ -6224,6 +6304,7 @@ class Pipeline:
                                         + opt_p[2] * (wavel - mean_wavel) ** 2
                                     )
                                     save_hdu_list.writeto(out_file, overwrite=True)
+
                                     self._update_files(
                                         f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
                                         str(out_file),
@@ -6292,15 +6373,15 @@ class Pipeline:
                 hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name="CORR_WAVE"))
                 hdu_list.writeto(fits_file, overwrite=True)
 
-            with open(self.json_file, "w", encoding="utf-8") as json_file:
-                json.dump(self.file_dict, json_file, indent=4)
+        with open(self.json_file, "w", encoding="utf-8") as json_file:
+            json.dump(self.file_dict, json_file, indent=4)
 
     @typechecked
     def util_extract_science(
         self,
         slit_fraction: list,
         nod_ab: str = "A",
-        verbose: bool = True,
+        verbose: bool = False,
     ) -> None:
         """
         Method for extracting spectra from the products of
@@ -6409,7 +6490,7 @@ class Pipeline:
     def util_extract_2d(
         self,
         nod_ab: str = "A",
-        verbose: bool = True,
+        verbose: bool = False,
         extraction_length: float = PIXEL_SCALE,
         spatial_oversampling: float = 1.0,
         use_corr_wavel: bool = True,
@@ -7012,7 +7093,7 @@ class Pipeline:
 
                         print(print_msg, end="")
 
-                        spec_shift[det_idx, order_idx, :, :] = ndimage.shift(
+                        spec_shift[det_idx, order_idx, :, :] = shift(
                             spec_select, (-result[1], 0.0), order=3, mode="constant"
                         )
 
@@ -7747,7 +7828,7 @@ class Pipeline:
             fits_file = (
                 f"{self.path}/product/correct_wavelengths_2d/"
                 + f"spectra_nod_{nod_ab}_{file_id:03d}_"
-                + "center_corr.fits"
+                + "center.fits"
             )
 
             if not os.path.exists(fits_file):
@@ -7845,11 +7926,11 @@ class Pipeline:
                 # indices = np.where((flux != 0.0) & (flux != np.nan))[0]
 
                 ax.plot(wavel, flux, "-", lw=0.5, color="tab:blue")
-                ax.fill_between(
-                    wavel, lower, upper, color="tab:blue", alpha=0.5, lw=0.0
-                )
-                if len(spec_corr) > 0:
-                    ax.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
+                # ax.fill_between(
+                #     wavel, lower, upper, color="tab:blue", alpha=0.5, lw=0.0
+                # )
+                # if len(spec_corr) > 0:
+                #     ax.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
                 ax.set_xlabel("Wavelength (nm)", fontsize=13)
                 ax.set_ylabel("Flux", fontsize=13)
 
@@ -7863,7 +7944,7 @@ class Pipeline:
 
                 count += 1
 
-            plt.tight_layout()
+            plt.tight_layout(h_pad=2)
 
             if corrected:
                 plot_file = (
@@ -7880,7 +7961,7 @@ class Pipeline:
             file_name = plot_file.split("/")[-2:]
             print(f"   - product/{file_name[-2]}/{file_name[-1]}")
 
-            plt.savefig(plot_file, dpi=300)
+            plt.savefig(plot_file)
             plt.clf()
             plt.close()
 
