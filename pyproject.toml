@@ -1,10 +1,9 @@
 [build-system]
-requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrires"
-version = "0.4.0"
 authors = [
     {name = "Tomas Stolker", email = "stolker@strw.leidenuniv.nl"},
     {name = "Rico Landman", email = "rlandman@strw.leidenuniv.nl"},
@@ -12,16 +11,49 @@ authors = [
 description = "Data reduction pipeline for VLT/CRIRES+"
 readme = "README.rst"
 requires-python = ">=3.10,<3.13"
-license = {text = "MIT License"}
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
-dynamic = ["dependencies"]
+dependencies = [
+    "astropy",
+    "astroquery",
+    "matplotlib",
+    "numpy",
+    "openpyxl",
+    "pandas",
+    "pooch",
+    "scikit-image",
+    "scipy",
+    "skycalc_ipy",
+    "tqdm",
+    "typeguard",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+docs = [
+    "jupyter",
+    "nbconvert",
+    "nbsphinx",
+    "pandoc",
+    "pydata-sphinx-theme",
+    "sphinx",
+    "sphinx-automodapi",
+    "sphinx_book_theme",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "pylint",
+    "pycodestyle",
+]
 
 [project.urls]
 Documentation = "https://pycrires.readthedocs.io"
@@ -31,8 +63,5 @@ Issues = "https://github.com/tomasstolker/pycrires/issues"
 [tool.setuptools]
 packages = ["pycrires"]
 
-[tool.setuptools.dynamic]
-dependencies = {file = "requirements.txt"}
-
-[tool.setuptools.package-data]
-mypkg = ["*.json"]
+[tool.setuptools_scm]
+write_to = "pycrires/_version.py"

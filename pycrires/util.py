@@ -11,7 +11,6 @@ from typing import Optional, Tuple
 import numpy as np
 import pooch
 
-from PyAstronomy.pyasl import fastRotBroad
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 from typeguard import typechecked
@@ -128,31 +127,31 @@ def fit_svd_kernel(
     rcond: float = 1e-3,
 ) -> np.ndarray:
     """
-     Function that tries to determine the line spread function of each row
-     using a Singular Value Decomposition.
+    Function that tries to determine the line spread function of each row
+    using a Singular Value Decomposition.
 
-     Parameters
-     ----------
-     order_flux : np.ndarray
-         2D spectrum (N_rows, N_wavelengths) to apply the masking to.
-     order_wl : np.ndarray
-         2D array (N_rows, N_wavelengths) corresponding to the
-         wavelength at each bin.
-     star_model : np.ndarray
-         2D array (N_rows, N_wavelengths) with the estimated stellar
-         contribution to each row.
-     max_shift : int
-         Maximum allowed shift (in pixels) for the line spread function
-         kernel.
-     rcond : float
-         Cutoff for small singular values in the inversion.
+    Parameters
+    ----------
+    order_flux : np.ndarray
+        2D spectrum (N_rows, N_wavelengths) to apply the masking to.
+    order_wl : np.ndarray
+        2D array (N_rows, N_wavelengths) corresponding to the
+        wavelength at each bin.
+    star_model : np.ndarray
+        2D array (N_rows, N_wavelengths) with the estimated stellar
+        contribution to each row.
+    max_shift : int
+        Maximum allowed shift (in pixels) for the line spread function
+        kernel.
+    rcond : float
+        Cutoff for small singular values in the inversion.
 
-     Returns
-     -------
-     result : np.ndarray
-         2D array (N_rows, N_wavelengths) with the stellar
-         contribution to each row corrected for the local line spread
-         function.
+    Returns
+    -------
+    result : np.ndarray
+        2D array (N_rows, N_wavelengths) with the stellar
+        contribution to each row corrected for the local line spread
+        function.
     """
 
     result = np.copy(order_flux)
@@ -206,6 +205,129 @@ def flag_outliers(
     order_flux[outliers] = fill_value
 
     return order_flux
+
+
+class _Gdl:
+
+    def __init__(self, vsini, epsilon):
+        """
+        Calculate the broadening profile.
+        Class copied from PyAstronomy package.
+
+        Parameters
+        ----------
+        vsini : float
+            Projected rotation speed of the star [km/s]
+        epsilon : float
+            Linear limb-darkening coefficient
+        """
+        self.vc = vsini / 299792.458
+        self.eps = epsilon
+
+    def gdl(self, dl, refwvl, dwl):
+        """
+        Calculates the broadening profile.
+
+        Parameters
+        ----------
+        dl : array
+            'Delta wavelength': The distance to the reference point in
+            wavelength space [A].
+        refwvl : array
+            The reference wavelength [A].
+        dwl : float
+            The wavelength bin size [A].
+
+        Returns
+        -------
+        Broadening profile : array
+            The broadening profile according to Gray.
+        """
+        self.dlmax = self.vc * refwvl
+        self.c1 = 2.0 * (1.0 - self.eps) / (np.pi * self.dlmax * (1.0 - self.eps / 3.0))
+        self.c2 = self.eps / (2.0 * self.dlmax * (1.0 - self.eps / 3.0))
+        result = np.zeros(len(dl))
+        x = dl / self.dlmax
+        indi = np.where(np.abs(x) < 1.0)[0]
+        result[indi] = self.c1 * np.sqrt(1.0 - x[indi] ** 2) + self.c2 * (
+            1.0 - x[indi] ** 2
+        )
+        # Correct the normalization for numeric accuracy
+        # The integral of the function is normalized, however, especially in the case
+        # of mild broadening (compared to the wavelength resolution), the discrete
+        # broadening profile may no longer be normalized, which leads to a shift of
+        # the output spectrum, if not accounted for.
+        result /= np.sum(result) * dwl
+        return result
+
+
+def fastRotBroad(wvl, flux, epsilon, vsini, effWvl=None):
+    """
+    Apply rotational broadening using a single broadening kernel.
+    Function copied from PyAstronomy package.
+
+    The effect of rotational broadening on the spectrum is
+    wavelength dependent, because the Doppler shift depends
+    on wavelength. This function neglects this dependence, which
+    is weak if the wavelength range is not too large.
+
+    .. note:: numpy.convolve is used to carry out the convolution
+              and "mode = same" is used. Therefore, the output
+              will be of the same size as the input, but it
+              will show edge effects.
+
+    Parameters
+    ----------
+    wvl : array
+        The wavelength
+    flux : array
+        The flux
+    epsilon : float
+        Linear limb-darkening coefficient
+    vsini : float
+        Projected rotational velocity in km/s.
+    effWvl : float, optional
+        The wavelength at which the broadening
+        kernel is evaluated. If not specified,
+        the mean wavelength of the input will be
+        used.
+
+    Returns
+    -------
+    Broadened spectrum : array
+        The rotationally broadened output spectrum.
+    """
+    # Check whether wavelength array is evenly spaced
+    sp = wvl[1::] - wvl[0:-1]
+    if abs(max(sp) - min(sp)) > 1e-6:
+        raise ValueError("Input wavelength array is not evenly spaced.")
+    if vsini <= 0.0:
+        raise ValueError("vsini must be positive.")
+    if (epsilon < 0) or (epsilon > 1.0):
+        raise ValueError(
+            "Linear limb-darkening coefficient, epsilon, should be '0 < epsilon < 1'."
+        )
+
+    # Wavelength binsize
+    dwl = wvl[1] - wvl[0]
+
+    if effWvl is None:
+        effWvl = np.mean(wvl)
+
+    gdl = _Gdl(vsini, epsilon)
+
+    # The number of bins needed to create the broadening kernel
+    binnHalf = int(np.floor(((vsini / 299792.458) * effWvl / dwl))) + 1
+    gwvl = (np.arange(4 * binnHalf) - 2 * binnHalf) * dwl + effWvl
+    # Create the broadening kernel
+    dl = gwvl - effWvl
+    g = gdl.gdl(dl, effWvl, dwl)
+    # Remove the zero entries
+    indi = np.where(g > 0.0)[0]
+    g = g[indi]
+
+    result = np.convolve(flux, g, mode="same") * dwl
+    return result
 
 
 @typechecked
@@ -264,11 +386,9 @@ def load_bt_settl_template(
 
     if not os.path.exists(decompressed_fpath):
         if t_val < 12:
-            url = "https://phoenix.ens-lyon.fr/Grids/" "BT-Settl/CIFIST2011/SPECTRA/"
+            url = "https://phoenix.ens-lyon.fr/Grids/BT-Settl/CIFIST2011/SPECTRA/"
         else:
-            url = (
-                "https://phoenix.ens-lyon.fr/Grids/" "BT-Settl/CIFIST2011_2015/SPECTRA/"
-            )
+            url = "https://phoenix.ens-lyon.fr/Grids/BT-Settl/CIFIST2011_2015/SPECTRA/"
 
         url += fname
 

@@ -28,7 +28,6 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from PyAstronomy.pyasl import fastRotBroad
 from scipy.ndimage import gaussian_filter, shift
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
@@ -3904,7 +3903,10 @@ class Pipeline:
 
     @typechecked
     def obs_staring(
-        self, verbose: bool = False, check_existing: bool = True, create_sof: bool = True
+        self,
+        verbose: bool = False,
+        check_existing: bool = True,
+        create_sof: bool = True,
     ) -> None:
         """
         Method for running ``cr2res_obs_staring``.
@@ -5863,7 +5865,9 @@ class Pipeline:
             n_files = len(fits_files)
 
         for file_idx in range(n_files):
-            print(f"\nReading spectra from {fits_files[file_idx]}...", end="", flush=True)
+            print(
+                f"\nReading spectra from {fits_files[file_idx]}...", end="", flush=True
+            )
             hdu_list = fits.open(fits_files[file_idx])
             print(" [DONE]")
 
@@ -5980,13 +5984,17 @@ class Pipeline:
                             if input_folder == "correct_wavelengths":
                                 out_file = output_dir / Path(fits_files[file_idx]).name
                             else:
-                                out_file = output_dir / (Path(fits_files[file_idx]).stem + "_corr.fits")
+                                out_file = output_dir / (
+                                    Path(fits_files[file_idx]).stem + "_corr.fits"
+                                )
 
                             save_hdu_list = fits.open(out_file)
 
                             mean_wavel = np.mean(wavel)
 
-                            save_hdu_list[f"CHIP{i_det+1}.INT1"].data[spec_name + "_WL"] = (
+                            save_hdu_list[f"CHIP{i_det+1}.INT1"].data[
+                                spec_name + "_WL"
+                            ] = (
                                 opt_a * (wavel - mean_wavel)
                                 + mean_wavel
                                 + opt_b
@@ -5995,7 +6003,9 @@ class Pipeline:
 
                             save_hdu_list.writeto(out_file, overwrite=True)
 
-                            self._update_files(f"CORRECT_WAVELENGTHS_{nod_ab}", str(out_file))
+                            self._update_files(
+                                f"CORRECT_WAVELENGTHS_{nod_ab}", str(out_file)
+                            )
 
                             save_hdu_list.close()
 
@@ -7653,7 +7663,7 @@ class Pipeline:
             for vsini_idx, vsini_item in enumerate(vsini_grid):
                 if vsini_item is not None:
                     if vsini_item > 0.0:
-                        broad_flux = fastRotBroad(
+                        broad_flux = util.fastRotBroad(
                             model_wavel, np.copy(model_flux), 0.0, vsini_item
                         )
 
@@ -7828,7 +7838,7 @@ class Pipeline:
             fits_file = (
                 f"{self.path}/product/correct_wavelengths_2d/"
                 + f"spectra_nod_{nod_ab}_{file_id:03d}_"
-                + "center.fits"
+                + "center_corr.fits"
             )
 
             if not os.path.exists(fits_file):
@@ -8007,8 +8017,8 @@ class Pipeline:
         while True:
             if corrected:
                 fits_file = (
-                    f"{self.path}/product/correct_wavelen"
-                    + "gths/cr2res_obs_nodding_extracted"
+                    f"{self.path}/product/correct_wavelengths/"
+                    + "cr2res_obs_nodding_extracted"
                     + f"{nod_ab}_{count:03d}_corr.fits"
                 )
 
