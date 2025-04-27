@@ -20,7 +20,6 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import pooch
-import skycalc_ipy
 
 from astropy import time
 from astropy import units as u
@@ -38,8 +37,8 @@ from typeguard import typechecked
 # from typeguard import config as typeguard_config
 # from typeguard import CollectionCheckStrategy, typechecked
 
-import pycrires
 from pycrires import util
+from ._version import __version__, __version_tuple__
 
 
 PIXEL_SCALE = 0.056  # (arcsec)
@@ -191,19 +190,39 @@ class Pipeline:
 
         # Check if there is a new version available
 
+        pycrires_version = (
+            f"{__version_tuple__[0]}."
+            f"{__version_tuple__[1]}."
+            f"{__version_tuple__[2]}"
+        )
+
         try:
             pypi_url = "https://pypi.org/pypi/pycrires/json"
 
             with urllib.request.urlopen(pypi_url, timeout=1.0) as open_url:
                 url_content = open_url.read()
                 url_data = json.loads(url_content)
-                latest_version = url_data["info"]["version"]
+                pypi_version = url_data["info"]["version"]
 
         except (urllib.error.URLError, socket.timeout):
-            latest_version = None
+            pypi_version = None
 
-        if latest_version is not None and pycrires.__version__ != latest_version:
-            print(f"\nA new version ({latest_version}) is available!")
+        if pypi_version is not None:
+            pypi_split = pypi_version.split(".")
+            current_split = pycrires_version.split(".")
+
+            new_major = (pypi_split[0] == current_split[0]) & (
+                pypi_split[1] > current_split[1]
+            )
+
+            new_minor = (
+                (pypi_split[0] == current_split[0])
+                & (pypi_split[1] == current_split[1])
+                & (pypi_split[2] > current_split[2])
+            )
+
+        if pypi_version is not None and (new_major | new_minor):
+            print(f"\nA new version ({pypi_version}) is available!")
             print("Want to stay informed about updates?")
             print("Please have a look at the Github page:")
             print("https://github.com/tomasstolker/pycrires")
@@ -1339,6 +1358,8 @@ class Pipeline:
         NoneType
             None
         """
+
+        import skycalc_ipy
 
         self._print_section("Run SkyCalc")
 
