@@ -85,6 +85,47 @@ class Pipeline:
             "Pipeline for VLT/CRIRES+", bound_char="=", extra_line=False
         )
 
+        # Check if there is a new version available
+
+        pycrires_version = (
+            f"{__version_tuple__[0]}."
+            f"{__version_tuple__[1]}."
+            f"{__version_tuple__[2]}"
+        )
+
+        try:
+            pypi_url = "https://pypi.org/pypi/pycrires/json"
+
+            with urllib.request.urlopen(pypi_url, timeout=1.0) as open_url:
+                url_content = open_url.read()
+                url_data = json.loads(url_content)
+                pypi_version = url_data["info"]["version"]
+
+        except (urllib.error.URLError, socket.timeout):
+            pypi_version = None
+
+        if pypi_version is not None:
+            pypi_split = pypi_version.split(".")
+            current_split = pycrires_version.split(".")
+
+            new_major = (pypi_split[0] == current_split[0]) & (
+                pypi_split[1] > current_split[1]
+            )
+
+            new_minor = (
+                (pypi_split[0] == current_split[0])
+                & (pypi_split[1] == current_split[1])
+                & (pypi_split[2] > current_split[2])
+            )
+
+        print(f"Version: {__version__}")
+
+        if pypi_version is not None and (new_major | new_minor):
+            print(f"\nA new version ({pypi_version}) is available!")
+            print("Want to stay informed about updates?")
+            print("Please have a look at the Github page:")
+            print("https://github.com/tomasstolker/pycrires")
+
         # Absolute path of the main reduction folder
 
         if path is None:
@@ -92,7 +133,7 @@ class Pipeline:
 
         self.path = Path(path).resolve()
 
-        print(f"Data reduction folder: {self.path}")
+        print(f"\nData reduction folder: {self.path}")
 
         # manually set spectral setting
 
@@ -187,45 +228,6 @@ class Pipeline:
             for item in output.split("\n"):
                 if item.replace(" ", "")[:9] == "molecfit_":
                     print(f"   -{item}")
-
-        # Check if there is a new version available
-
-        pycrires_version = (
-            f"{__version_tuple__[0]}."
-            f"{__version_tuple__[1]}."
-            f"{__version_tuple__[2]}"
-        )
-
-        try:
-            pypi_url = "https://pypi.org/pypi/pycrires/json"
-
-            with urllib.request.urlopen(pypi_url, timeout=1.0) as open_url:
-                url_content = open_url.read()
-                url_data = json.loads(url_content)
-                pypi_version = url_data["info"]["version"]
-
-        except (urllib.error.URLError, socket.timeout):
-            pypi_version = None
-
-        if pypi_version is not None:
-            pypi_split = pypi_version.split(".")
-            current_split = pycrires_version.split(".")
-
-            new_major = (pypi_split[0] == current_split[0]) & (
-                pypi_split[1] > current_split[1]
-            )
-
-            new_minor = (
-                (pypi_split[0] == current_split[0])
-                & (pypi_split[1] == current_split[1])
-                & (pypi_split[2] > current_split[2])
-            )
-
-        if pypi_version is not None and (new_major | new_minor):
-            print(f"\nA new version ({pypi_version}) is available!")
-            print("Want to stay informed about updates?")
-            print("Please have a look at the Github page:")
-            print("https://github.com/tomasstolker/pycrires")
 
     @staticmethod
     @typechecked
