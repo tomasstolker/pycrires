@@ -43,8 +43,8 @@ Copyright 2025 Tomas Stolker & Rico Landman
 .. |Python Versions| image:: https://img.shields.io/pypi/pyversions/pycrires
    :target: https://pypi.python.org/pypi/pycrires
 
-.. |CI Status| image:: https://github.com/tomasstolker/pycrires/actions/workflows/main.yml/badge.svg
-   :target: https://github.com/tomasstolker/pycrires/actions
+.. |CI Status| image:: https://github.com/tomasstolker/pycrires/actions/workflows/main.yml/badge.svg?branch=main
+   :target: https://github.com/tomasstolker/pycrires/actions/workflows/main.yml
 
 .. |Docs Status| image:: https://img.shields.io/readthedocs/pycrires
    :target: http://pycrires.readthedocs.io

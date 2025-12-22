@@ -10,12 +10,12 @@ authors = [
 ]
 description = "Data reduction pipeline for VLT/CRIRES+"
 readme = "README.rst"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 classifiers = [
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
@@ -65,3 +65,4 @@ packages = ["pycrires"]
 
 [tool.setuptools_scm]
 write_to = "pycrires/_version.py"
+local_scheme = "no-local-version"

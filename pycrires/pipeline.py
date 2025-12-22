@@ -122,9 +122,8 @@ class Pipeline:
 
         if pypi_version is not None and (new_major | new_minor):
             print(f"\nA new version ({pypi_version}) is available!")
-            print("Want to stay informed about updates?")
-            print("Please have a look at the Github page:")
-            print("https://github.com/tomasstolker/pycrires")
+            print("Update pycrires by running:")
+            print("pip install --upgrade pycrires")
 
         # Absolute path of the main reduction folder
 

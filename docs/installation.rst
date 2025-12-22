@@ -3,12 +3,12 @@
 Installation
 ============
 
-``pycrires`` is compatible with `Python <https://www.python.org>`_ versions 3.10/3.11/3.12 and is available from `PyPI <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
+``pycrires`` is available on `PyPI <https://pypi.org/project/pycrires/>`_ and `Github <https://github.com/tomasstolker/pycrires>`_.
 
 Installation from PyPI
 ----------------------
 
-The Python package can be installed from `PyPI <https://pypi.org/project/pycrires/>`_ with the `pip package manager <https://packaging.python.org/tutorials/installing-packages/>`_:
+The package can be installed from `PyPI <https://pypi.org/project/pycrires/>`_ with the `pip package manager <https://packaging.python.org/tutorials/installing-packages/>`_:
 
 .. code-block:: console
 
