@@ -1,5 +1,6 @@
 *.pyc
 .DS_Store
+pycrires/_version.py
 docs/_build
 docs/api
 docs/.ipynb_checkpoints/
