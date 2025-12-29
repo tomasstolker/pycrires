@@ -40,7 +40,6 @@ clean:
 	find . -name '__pycache__' -exec rm -rf {} +
 	rm -f .coverage*
 	rm -f coverage.xml
-	rm -f species/_version.py
 	rm -rf build/
 	rm -rf dist/
 	rm -rf pycrires.egg-info/
