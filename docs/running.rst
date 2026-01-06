@@ -74,24 +74,24 @@ Next, for spatially-resolved targets (e.g. directly imaged exoplanets), there ar
 
   pipeline.fit_gaussian(nod_ab='A', extraction_input='custom_extract_2d')
 
-  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='fit_gaussian',
+  pipeline.correct_wavelengths_2d(nod_ab='A', input_folder='fit_gaussian',
                                   collapse_spatially=True, collapse_exposures=True, accuracy=0.02)
 
-  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='correct_wavelengths_2d',
+  pipeline.correct_wavelengths_2d(nod_ab='A', input_folder='correct_wavelengths_2d',
                                   collapse_spatially=True, collapse_exposures=True, accuracy=0.005)
 
-  pipeline.correct_wavelengths_2d(nod_ab=nod_ab, input_folder='correct_wavelengths_2d',
+  pipeline.correct_wavelengths_2d(nod_ab='A', input_folder='correct_wavelengths_2d',
                                   collapse_spatially=True, collapse_exposures=True, accuracy=0.001)
 
-  pipeline.remove_starlight(nod_ab, input_folder='correct_wavelengths_2d',
+  pipeline.remove_starlight(nod_ab='A', input_folder='correct_wavelengths_2d',
                             telluric_mask=(0.6, 1.6), svd_broadening_kernel=True)
 
-  pipeline.remove_systematics(nod_ab, n_modes=5, input_folder='remove_starlight')
+  pipeline.remove_systematics(nod_ab='A', n_modes=5, input_folder='remove_starlight')
 
   model_flux, model_wavel = pycrires.load_bt_settl_template(t_eff=1500.0, log_g=4.0, vsini=10.0)
 
   pipeline.detection_map(model_flux, model_wavel, rv_grid=np.linspace(-100, 100, 201), vsini_grid=None,
-                         nod_ab=nod_ab, input_folder='remove_systematics', error_weighted=False)
+                         nod_ab='A', input_folder='remove_systematics', error_weighted=False)
 
 Or, for unresolved targets (e.g. transiting exoplanets), the 1D spectra are already extracted by the ``obs_nodding`` method so we only need to apply the additional wavelength correction:
 

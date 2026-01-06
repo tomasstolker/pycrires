@@ -58,11 +58,11 @@ clean:
 	rm -rf docs/product/
 	rm -rf docs/tmp/
 	rm -rf docs/raw/
+	rm -f tests/files.json
+	rm -f tests/header.csv
+	rm -f tests/header.xlsx
 	rm -rf tests/calib/
 	rm -rf tests/config/
 	rm -rf tests/product/
 	rm -rf tests/tmp/
 	rm -rf tests/raw/
-	rm -rf tests/files.json
-	rm -rf tests/header.csv
-	rm -rf tests/header.xlsx

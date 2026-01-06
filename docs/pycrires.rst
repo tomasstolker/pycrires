@@ -1,6 +1,29 @@
 pycrires package
 ================
 
-.. automodapi:: pycrires.pipeline
-   :no-inheritance-diagram:
-   :skip: SkyCoord
+Submodules
+----------
+
+pycrires.pipeline module
+------------------------
+
+.. automodule:: pycrires.pipeline
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+pycrires.util module
+--------------------
+
+.. automodule:: pycrires.util
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+Module contents
+---------------
+
+.. automodule:: pycrires
+   :members:
+   :show-inheritance:
+   :undoc-members:

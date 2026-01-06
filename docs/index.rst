@@ -3,10 +3,11 @@
 Documentation for *pycrires*
 ============================
 
-*pycrires* is a data reduction pipeline for VLT/CRIRES+.
+*pycrires* is a data reduction pipeline for VLT/CRIRES+
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :hidden:
 
    installation
    running

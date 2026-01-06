@@ -27,8 +27,8 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
 from matplotlib import pyplot as plt
-from scipy.ndimage import gaussian_filter, shift
 from scipy.interpolate import interp1d
+from scipy.ndimage import gaussian_filter, shift
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 from skimage.restoration import inpaint
@@ -87,6 +87,8 @@ class Pipeline:
 
         # Check if there is a new version available
 
+        print(f"Version: {__version__}")
+
         pycrires_version = (
             f"{__version_tuple__[0]}."
             f"{__version_tuple__[1]}."
@@ -118,10 +120,8 @@ class Pipeline:
                 & (pypi_split[2] > current_split[2])
             )
 
-        print(f"Version: {__version__}")
-
-        if pypi_version is not None and (new_major | new_minor):
-            print(f"\n-> pycrires v{pypi_version} is available!")
+            if new_major | new_minor:
+                print(f"\n-> pycrires v{pypi_version} is available!")
 
         # Absolute path of the main reduction folder
 
@@ -3514,6 +3514,7 @@ class Pipeline:
                 url = (
                     f"https://home.strw.leidenuniv.nl/~stolker/pycrires/{file_tag}.fits"
                 )
+
                 line_file = output_dir / f"{file_tag}.fits"
 
                 if not os.path.exists(line_file):
@@ -6236,12 +6237,21 @@ class Pipeline:
 
                     # If we sum over the spatial dimension to boost SNR, do so
                     if collapse_spatially:
+                        wavel_list = [np.nanmean(wavel_2d, axis=0)]
+
                         cent_idx = spec_2d.shape[0] // 2 + 1
                         spec_2d = spec_2d[cent_idx - 6 : cent_idx + 7]
-                        norm_spec = spec_2d / np.nansum(spec_2d, axis=1)[:, np.newaxis]
-                        wavel_list = [np.nanmean(wavel_2d, axis=0)]
-                        # spec_list = [np.nansum(spec_2d[cent_idx-7:cent_idx+8], axis=0)]
-                        spec_list = [np.nanmedian(norm_spec, axis=0)]
+
+                        if 0.0 in np.nansum(spec_2d, axis=1):
+                            spec_list = [np.zeros(spec_2d.shape[1])]
+
+                        else:
+                            norm_spec = (
+                                spec_2d / np.nansum(spec_2d, axis=1)[:, np.newaxis]
+                            )
+                            # spec_list = [np.nansum(spec_2d[cent_idx-7:cent_idx+8], axis=0)]
+                            spec_list = [np.nanmedian(norm_spec, axis=0)]
+
                     else:
                         wavel_list = np.copy(wavel_2d)
                         spec_list = np.copy(spec_2d)
@@ -7194,7 +7204,7 @@ class Pipeline:
         svd_broadening_kernel: bool = False,
     ) -> None:
         """
-        Method for removing stellar contribution from each row
+        Method for removing the stellar contribution from each row
         along the slit. This is done by calculating a master stellar
         spectrum and fitting this to the local continuum of each row.
         Subsequently, a correction is applied for changes in the
@@ -7260,6 +7270,12 @@ class Pipeline:
                         f"   - Processing detector {det_idx+1} order {order_idx+1}... ",
                         end="\r",
                     )
+
+                    if np.count_nonzero(order_spec) == 0:
+                        # Skip orders that contain only zeros
+                        # That can happen at the edge of the detector
+                        star_subtracted[det_idx, order_idx] = np.zeros(order_spec.shape)
+                        continue
 
                     # Mask deepest tellurics
                     telluric_masked = util.mask_tellurics(
@@ -7459,15 +7475,15 @@ class Pipeline:
         error_weighted: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        Method for cross-correlating each row with a model
-        template.
+        Method for cross-correlating each row of the 2D extracted
+        spectra with a model template.
 
         Parameters
         ----------
         model_flux : np.ndarray
             Template used for cross-correlation.
         model_wavel : np.ndarray
-            Wavelengths corresponding to the template in nm.
+            Wavelengths (nm) corresponding to the template.
         rv_grid : np.ndarray
             Radial velocities (km/s) to calculate the
             cross-correlation on.
@@ -7950,14 +7966,11 @@ class Pipeline:
                 flux = np.nan_to_num(flux)
                 error = np.nan_to_num(error)
 
-                lower = flux - error
-                upper = flux + error
-
                 # indices = np.where((flux != 0.0) & (flux != np.nan))[0]
 
                 ax.plot(wavel, flux, "-", lw=0.5, color="tab:blue")
                 # ax.fill_between(
-                #     wavel, lower, upper, color="tab:blue", alpha=0.5, lw=0.0
+                #     wavel, flux - error, flux + error, color="tab:blue", alpha=0.5, lw=0.0
                 # )
                 # if len(spec_corr) > 0:
                 #     ax.plot(wavel, spec_corr[count], "-", lw=0.3, color="black")
@@ -8111,8 +8124,8 @@ class Pipeline:
         Parameters
         ----------
         keep_product : bool
-            Keep the `product` folder (``True``) or remove that folder
-            as well (``False``).
+            Keep the `product` folder (``True``) or remove that
+            folder as well (``False``).
 
         Returns
         -------
@@ -8153,7 +8166,8 @@ class Pipeline:
     @typechecked
     def run_recipes(self) -> None:
         """
-        Method for running the full chain of recipes.
+        Method for running the full chain of recipes up and
+        including :func:`~pycrires.pipeline.Pipeline.obs_nodding`.
 
         Returns
         -------
@@ -8165,26 +8179,21 @@ class Pipeline:
         self.extract_header()
         self.cal_dark(verbose=False)
         self.util_calib(calib_type="flat", verbose=False)
-        self.util_trace(plot_trace=False, verbose=False)
+        self.util_trace(plot_trace=True, verbose=False)
         self.util_slit_curv(plot_trace=True, verbose=False)
         self.util_extract(calib_type="flat", verbose=False)
         self.util_normflat(verbose=False)
         self.util_calib(calib_type="une", verbose=False)
         self.util_extract(calib_type="une", verbose=False)
         self.util_genlines(verbose=False)
-        self.util_wave(calib_type="une", verbose=False)
+        self.util_wave(calib_type="une", poly_deg=0, wl_err=0.1, verbose=False)
+        self.util_wave(calib_type="une", poly_deg=0, wl_err=0.03, verbose=False)
         self.util_calib(calib_type="fpet", verbose=False)
         self.util_extract(calib_type="fpet", verbose=False)
-        self.util_wave(calib_type="fpet", verbose=False)
-        self.obs_nodding(verbose=False, correct_bad_pixels=True)
-        self.plot_spectra(nod_ab="A", telluric=True, corrected=False, file_id=0)
-        self.export_spectra(nod_ab="A", corrected=False)
+        self.util_wave(calib_type="fpet", poly_deg=4, wl_err=0.01, verbose=False)
+        self.obs_nodding(
+            correct_bad_pixels=True, extraction_required=True, verbose=False
+        )
         self.run_skycalc(pwv=1.0)
-        self.correct_wavelengths(nod_ab="A", create_plots=True)
-        self.plot_spectra(nod_ab="A", telluric=True, corrected=True, file_id=0)
-        self.export_spectra(nod_ab="A", corrected=True)
-        self.util_extract_2d(nod_ab="A", verbose=False, use_corr_wavel=True)
-        # self.molecfit_input(nod_ab="A")
-        # self.molecfit_model(nod_ab="A", verbose=False)
-        # self.molecfit_calctrans(nod_ab="A", verbose=False)
-        # self.molecfit_correct(nod_ab="A", verbose=False)
+        self.plot_spectra(nod_ab="A", telluric=True, corrected=False, file_id=0)
+        self.plot_spectra(nod_ab="B", telluric=True, corrected=False, file_id=0)

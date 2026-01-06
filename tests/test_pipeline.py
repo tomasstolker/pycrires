@@ -30,6 +30,7 @@ class TestPipeline:
         )
 
         with tarfile.open(data_file) as open_tar:
+
             def is_within_directory(directory, target):
 
                 abs_directory = os.path.abspath(directory)
@@ -46,18 +47,20 @@ class TestPipeline:
                     if not is_within_directory(path, member_path):
                         raise Exception("Attempted Path Traversal in Tar File")
 
-                tar.extractall(path, members, numeric_owner=numeric_owner)
+                tar.extractall(path, members, numeric_owner=numeric_owner, filter="data")
 
             safe_extract(open_tar, data_folder)
 
         self.limit = 1e-8
         self.pipeline = pycrires.Pipeline(self.test_dir)
 
-        self.esorex_error = "Esorex is not accessible from the " \
-                            "command line. Please make sure that " \
-                            "the ESO pipeline is correctly " \
-                            "installed and included in the PATH " \
-                            "variable."
+        self.esorex_error = (
+            "Esorex is not accessible from the "
+            "command line. Please make sure that "
+            "the ESO pipeline is correctly "
+            "installed and included in the PATH "
+            "variable."
+        )
 
     def teardown_class(self) -> None:
 
@@ -126,9 +129,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_slit_curv(plot_trace=True, verbose=False)
 
-                assert str(error.value) == "The UTIL_TRACE_TW file is not found " \
-                                           "in the 'calib' folder. Please first " \
-                                           "run the util_trace method."
+                assert (
+                    str(error.value) == "The UTIL_TRACE_TW file is not found "
+                    "in the 'calib' folder. Please first "
+                    "run the util_trace method."
+                )
 
         else:
             self.pipeline.util_slit_curv(plot_trace=True, verbose=False)
@@ -139,9 +144,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_extract(calib_type="flat", verbose=False)
 
-                assert str(error.value) == "The UTIL_CALIB file is not found in " \
-                                           "the 'calib' folder. Please first " \
-                                           "run the util_calib method."
+                assert (
+                    str(error.value) == "The UTIL_CALIB file is not found in "
+                    "the 'calib' folder. Please first "
+                    "run the util_calib method."
+                )
 
         else:
             self.pipeline.util_extract(calib_type="flat", verbose=False)
@@ -152,9 +159,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_normflat(verbose=False)
 
-                assert str(error.value) == "The UTIL_CALIB file is not found in " \
-                                           "the 'calib' folder. Please first " \
-                                           "run the util_calib method."
+                assert (
+                    str(error.value) == "The UTIL_CALIB file is not found in "
+                    "the 'calib' folder. Please first "
+                    "run the util_calib method."
+                )
 
         else:
             self.pipeline.util_normflat(verbose=False)
@@ -176,9 +185,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_extract(calib_type="une", verbose=False)
 
-                assert str(error.value) == "The UTIL_CALIB file is not found in " \
-                                           "the 'calib' folder. Please first " \
-                                           "run the util_calib method."
+                assert (
+                    str(error.value) == "The UTIL_CALIB file is not found in "
+                    "the 'calib' folder. Please first "
+                    "run the util_calib method."
+                )
 
         else:
             self.pipeline.util_extract(calib_type="une", verbose=False)
@@ -200,14 +211,20 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_wave(calib_type="une", verbose=False)
 
-                assert str(error.value) == "The EMISSION_LINES file is not " \
-                                           "found in the 'calib/genlines' " \
-                                           "folder. Please first run the " \
-                                           "util_genlines method."
+                assert (
+                    str(error.value) == "The EMISSION_LINES file is not "
+                    "found in the 'calib/genlines' "
+                    "folder. Please first run the "
+                    "util_genlines method."
+                )
 
         else:
-            self.pipeline.util_wave(calib_type="une", poly_deg=0, wl_err=0.1, verbose=False)
-            self.pipeline.util_wave(calib_type="une", poly_deg=2, wl_err=0.03, verbose=False)
+            self.pipeline.util_wave(
+                calib_type="une", poly_deg=0, wl_err=0.1, verbose=False
+            )
+            self.pipeline.util_wave(
+                calib_type="une", poly_deg=2, wl_err=0.03, verbose=False
+            )
 
     def test_util_calib_fpet(self) -> None:
 
@@ -226,9 +243,11 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_extract(calib_type="fpet", verbose=False)
 
-                assert str(error.value) == "The UTIL_CALIB file is not found in " \
-                                           "the 'calib' folder. Please first " \
-                                           "run the util_calib method."
+                assert (
+                    str(error.value) == "The UTIL_CALIB file is not found in "
+                    "the 'calib' folder. Please first "
+                    "run the util_calib method."
+                )
 
         else:
             self.pipeline.util_extract(calib_type="fpet", verbose=False)
@@ -239,23 +258,31 @@ class TestPipeline:
             with pytest.raises(RuntimeError) as error:
                 self.pipeline.util_wave(calib_type="fpet", verbose=False)
 
-                assert str(error.value) == "The UTIL_EXTRACT_1D file is not " \
-                                           "found in the 'calib/" \
-                                           "util_extract_fpet' folder. Please " \
-                                           "first run the util_extract method " \
-                                           "with calib_type='une'."
+                assert (
+                    str(error.value) == "The UTIL_EXTRACT_1D file is not "
+                    "found in the 'calib/"
+                    "util_extract_fpet' folder. Please "
+                    "first run the util_extract method "
+                    "with calib_type='une'."
+                )
 
         else:
-            self.pipeline.util_wave(calib_type="fpet", poly_deg=4, wl_err=0.01, verbose=False)
+            self.pipeline.util_wave(
+                calib_type="fpet", poly_deg=4, wl_err=0.01, verbose=False
+            )
 
     def test_obs_nodding(self) -> None:
 
         if shutil.which("esorex") is None:
             with pytest.raises(RuntimeError) as error:
-                self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=False, extraction_required=False)
+                self.pipeline.obs_nodding(
+                    verbose=False, correct_bad_pixels=False, extraction_required=False
+                )
 
         else:
-            self.pipeline.obs_nodding(verbose=False, correct_bad_pixels=False, extraction_required=False)
+            self.pipeline.obs_nodding(
+                verbose=False, correct_bad_pixels=False, extraction_required=False
+            )
 
     def test_run_skycalc(self) -> None:
 
@@ -265,7 +292,11 @@ class TestPipeline:
 
         if shutil.which("esorex") is None:
             with pytest.raises(FileNotFoundError):
-                self.pipeline.plot_spectra(nod_ab="A", telluric=True, corrected=False, file_id=0)
+                self.pipeline.plot_spectra(
+                    nod_ab="A", telluric=True, corrected=False, file_id=0
+                )
 
         else:
-            self.pipeline.plot_spectra(nod_ab="A", telluric=True, corrected=False, file_id=0)
+            self.pipeline.plot_spectra(
+                nod_ab="A", telluric=True, corrected=False, file_id=0
+            )
