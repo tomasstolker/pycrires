@@ -7366,9 +7366,12 @@ class Pipeline:
         normalize: bool
             If true, all rows are normalized before doing the PCA.
         exclude_rows: list, None
-            Rows to remove before building the PCA model. This is
+            Rows to exclude when building the PCA model. This is
             used to avoid self-subtraction of the planet signal.
-            Not implemented yet!
+            The input data has the following shape: (n_detectors,
+            n_orders, n_rows, n_wavelengths), so the ``exclude_rows``
+            indices should be smaller than the n_rows size.
+            No rows are excluded if the argument is set to ``None``.
 
         Returns
         -------
@@ -7400,6 +7403,9 @@ class Pipeline:
 
             pca_subtracted = np.zeros_like(spec)
 
+            print(f"Data shape: {spec.shape}")
+            print(f"Exclude rows: {exclude_rows}")
+
             for det_idx in np.arange(3):
                 for order_idx, (order_spec, order_wl, order_err) in enumerate(
                     zip(spec[det_idx], wl[det_idx], err[det_idx])
@@ -7426,11 +7432,31 @@ class Pipeline:
                     nans = np.isnan(order_spec)
                     order_spec[nans] = 0.0
 
-                    # SVD
-                    um, sm, vm = np.linalg.svd(order_spec, full_matrices=False)
-                    s_new = np.copy(sm)
-                    s_new[:n_modes] = 0
-                    residuals = um.dot(np.diag(s_new)).dot(vm)
+                    # Create boolean mask for selected rows
+                    row_select = np.ones(order_spec.shape[0], dtype=bool)
+                    if exclude_rows is not None:
+                        row_select[exclude_rows] = False
+
+                    # Singular Value Decomposition
+                    # This old implementation does not support
+                    # reconstructing the residuals for all rows while
+                    # excluding some rows in the PCA model
+                    # um, sm, vm = np.linalg.svd(order_spec, full_matrices=False)
+                    # s_new = np.copy(sm)
+                    # s_new[:n_modes] = 0
+                    # residuals = um @ np.diag(s_new) @ vm
+
+                    # Compute SVD on selected rows
+                    um, sm, vm = np.linalg.svd(order_spec[row_select], full_matrices=False)
+
+                    # Project all rows onto the PCA basis
+                    coeffs = order_spec @ vm.T
+
+                    # Zero out the first n_modes singular components
+                    coeffs[:, :n_modes] = 0
+
+                    # Reconstruct residuals
+                    residuals = coeffs @ vm
 
                     # Put NaNs back
                     residuals[nans] = np.nan
