@@ -13,7 +13,6 @@ import urllib.request
 import warnings
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import astropy.constants as const
 import matplotlib as mpl
@@ -26,16 +25,16 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.eso import Eso
+from beartype import beartype, typing
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter, shift
 from scipy.optimize import curve_fit
 from scipy.signal import savgol_filter
 from skimage.restoration import inpaint
-from typeguard import typechecked
 
 # from typeguard import config as typeguard_config
-# from typeguard import CollectionCheckStrategy, typechecked
+# from typeguard import CollectionCheckStrategy, beartype
 
 from pycrires import util
 from ._version import __version__, __version_tuple__
@@ -54,9 +53,11 @@ class Pipeline:
     before rerunning a method.
     """
 
-    @typechecked
+    @beartype
     def __init__(
-        self, path: Optional[str] = None, wavel_setting: Optional[str] = None
+        self,
+        path: typing.Optional[str] = None,
+        wavel_setting: typing.Optional[str] = None,
     ) -> None:
         """
         Parameters
@@ -227,12 +228,12 @@ class Pipeline:
                     print(f"   -{item}")
 
     @staticmethod
-    @typechecked
+    @beartype
     def _print_section(
         sect_title: str,
         bound_char: str = "-",
         extra_line: bool = True,
-        recipe_name: Optional[str] = None,
+        recipe_name: typing.Optional[str] = None,
     ) -> None:
         """
         Internal method for printing a section title.
@@ -265,7 +266,7 @@ class Pipeline:
         if recipe_name is not None:
             print(f"EsoRex recipe: {recipe_name}\n")
 
-    @typechecked
+    @beartype
     def _observation_info(self) -> None:
         """
         Internal method for printing some details
@@ -340,7 +341,7 @@ class Pipeline:
                     else:
                         print(f"   - {item} -> {count_files} files")
 
-    @typechecked
+    @beartype
     def _export_header(self) -> None:
         """
         Internal method for exporting the ``DataFrame`` with header
@@ -374,7 +375,7 @@ class Pipeline:
 
         self.header_data = pd.read_csv(self.header_file)
 
-    @typechecked
+    @beartype
     def _update_files(self, sof_tag: str, file_name: str) -> None:
         """
         Internal method for updating the dictionary with file
@@ -459,7 +460,7 @@ class Pipeline:
         else:
             self.file_dict[sof_tag] = {file_name: file_dict}
 
-    @typechecked
+    @beartype
     def _create_config(
         self, eso_recipe: str, pipeline_method: str, verbose: bool
     ) -> None:
@@ -716,8 +717,8 @@ class Pipeline:
             if not verbose:
                 print(" [DONE]")
 
-    @typechecked
-    def _download_archive(self, dpr_type: str, det_dit: Optional[float]) -> None:
+    @beartype
+    def _download_archive(self, dpr_type: str, det_dit: typing.Optional[float]) -> None:
         """
         Internal method for downloading data from the ESO Science
         Archive.
@@ -849,7 +850,7 @@ class Pipeline:
                 f"Continuing without the {dpr_type} data now."
             )
 
-    @typechecked
+    @beartype
     def _plot_image(self, file_type: str, fits_folder: str) -> None:
         """
         Internal method for plotting the data of a specified file type.
@@ -918,7 +919,7 @@ class Pipeline:
         else:
             warnings.warn(f"Could not find {file_type} files to plot.")
 
-    @typechecked
+    @beartype
     def _plot_trace(self, dpr_catg: str) -> None:
         """
         Internal method for plotting the raw data of a specified
@@ -1047,8 +1048,10 @@ class Pipeline:
                 plt.clf()
                 plt.close()
 
-    @typechecked
-    def _find(self, key: str, key_type: Optional[str] = None) -> Dict[str, List[str]]:
+    @beartype
+    def _find(
+        self, key: str, key_type: typing.Optional[str] = None
+    ) -> typing.Dict[str, typing.List[str]]:
         """
         Internal method for finding a file in the file dictionary
         given the `key` and an  optional `key_type` (usually `fpet`
@@ -1082,10 +1085,10 @@ class Pipeline:
 
         return self.file_dict[key]
 
-    @typechecked
+    @beartype
     def _select_bpm(
         self, wlen_id: str, dit_select: float, bpm_type: str = "CAL_DARK_BPM"
-    ) -> Optional[str]:
+    ) -> typing.Optional[str]:
         """
         Internal method for selecting the bad pixel map (BPM)of the
         requested DIT. An adjustment is made for long exposures in
@@ -1141,10 +1144,10 @@ class Pipeline:
 
         return bpm_file
 
-    @typechecked
+    @beartype
     def _find_master_dark(
         self, science_dit: float, key: str = "CAL_DARK_MASTER"
-    ) -> List[str]:
+    ) -> typing.List[str]:
         """
         Internal method for ... TODO
 
@@ -1171,8 +1174,8 @@ class Pipeline:
 
         return list(self.file_dict["CAL_DARK_MASTER"].keys())[ind_dit]
 
-    @typechecked
-    def _find_master_flat(self) -> Tuple[str, str]:
+    @beartype
+    def _find_master_flat(self) -> typing.Tuple[str, str]:
         """
         Find a suitable master flat file from the file dictionary.
 
@@ -1202,7 +1205,7 @@ class Pipeline:
 
         return master_flat_filename, good_key
 
-    @typechecked
+    @beartype
     def rename_files(self) -> None:
         """
         Method for renaming the files from ``ARCFILE`` to ``ORIGFILE``.
@@ -1278,7 +1281,7 @@ class Pipeline:
         print(f"\nTotal tumber of FITS files: {n_total}")
         print(f"Number of renamed files: {n_renamed}")
 
-    @typechecked
+    @beartype
     def extract_header(self) -> None:
         """
         Method for extracting relevant header data from the FITS files
@@ -1334,7 +1337,7 @@ class Pipeline:
                 "about the observations."
             )
 
-    @typechecked
+    @beartype
     def run_skycalc(self, pwv: float = 3.5) -> None:
         """
         Method for running the Python wrapper of SkyCalc
@@ -1507,7 +1510,7 @@ class Pipeline:
         out_file = self.calib_folder / "run_skycalc/transm_spec.dat"
         np.savetxt(out_file, transm_spec, header=header)
 
-    @typechecked
+    @beartype
     def cal_dark(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_dark``.
@@ -1646,7 +1649,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def cal_flat(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_flat``.
@@ -1849,7 +1852,7 @@ class Pipeline:
             with open(self.json_file, "w", encoding="utf-8") as json_file:
                 json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def cal_detlin(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_detlin``.
@@ -1973,7 +1976,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def cal_wave(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_cal_wave``.
@@ -2192,7 +2195,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_calib(
         self, calib_type: str, verbose: bool = False, create_sof: bool = True
     ) -> None:
@@ -2540,7 +2543,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_trace(
         self, plot_trace: bool = False, verbose: bool = False, create_sof: bool = True
     ) -> None:
@@ -2695,7 +2698,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_slit_curv(
         self, plot_trace: bool = False, verbose: bool = False, create_sof: bool = True
     ) -> None:
@@ -2858,7 +2861,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_extract(
         self, calib_type: str, verbose: bool = False, create_sof: bool = True
     ) -> None:
@@ -3087,7 +3090,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_normflat(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_normflat``.
@@ -3236,7 +3239,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_bpm_merge(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_bpm_merge``.
@@ -3433,7 +3436,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_genlines(self, verbose: bool = False, create_sof: bool = True) -> None:
         """
         Method for running ``cr2res_util_genlines``. Generate
@@ -3641,7 +3644,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_wave(
         self,
         calib_type: str,
@@ -3922,7 +3925,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def obs_staring(
         self,
         verbose: bool = False,
@@ -4093,7 +4096,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def obs_nodding(
         self,
         correct_bad_pixels: bool = True,
@@ -4700,7 +4703,7 @@ class Pipeline:
             with open(self.json_file, "w", encoding="utf-8") as json_file:
                 json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def obs_nodding_irregular(
         self,
         verbose: bool = False,
@@ -5175,7 +5178,7 @@ class Pipeline:
             print("\n This is how they were paired in cr2res_obs_nodding:")
             print(sequence)
 
-    @typechecked
+    @beartype
     def molecfit_input(self, nod_ab: str = "A") -> None:
         """
         Method for converting the extracted spectra into input files
@@ -5358,7 +5361,7 @@ class Pipeline:
             if fits_idx + 1 < len(fits_files):
                 print()
 
-    @typechecked
+    @beartype
     def molecfit_model(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_model``.
@@ -5475,7 +5478,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def molecfit_calctrans(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_calctrans``.
@@ -5578,7 +5581,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def molecfit_correct(self, nod_ab: str = "A", verbose: bool = False) -> None:
         """
         Method for running ``molecfit_correct``.
@@ -5662,7 +5665,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def _xcor_wavelength_solution(
         self,
         spec: np.ndarray,
@@ -5670,9 +5673,11 @@ class Pipeline:
         telluric_template: np.ndarray,
         accuracy: float = 0.002,
         n_grid: int = 51,
-        window_length: Union[int, np.int64] = 201,
-    ) -> Tuple[
-        np.ndarray, Tuple[float, float, float], Tuple[np.int_, np.int_, np.int_]
+        window_length: typing.Union[int, np.int64] = 201,
+    ) -> typing.Tuple[
+        np.ndarray,
+        typing.Tuple[float, float, float],
+        typing.Tuple[np.int_, np.int_, np.int_],
     ]:
         """
         Internal method for ... TODO
@@ -5775,7 +5780,7 @@ class Pipeline:
 
         return cross_corr, (opt_b, opt_a, opt_c), opt_idx
 
-    @typechecked
+    @beartype
     def correct_wavelengths(
         self,
         nod_ab: str = "A",
@@ -6089,7 +6094,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def correct_wavelengths_2d(
         self,
         nod_ab: str = "A",
@@ -6416,7 +6421,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_extract_science(
         self,
         slit_fraction: list,
@@ -6526,7 +6531,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def util_extract_2d(
         self,
         nod_ab: str = "A",
@@ -6752,7 +6757,7 @@ class Pipeline:
 
                 os.remove(file_name)
 
-    @typechecked
+    @beartype
     def custom_extract_2d(
         self,
         nod_ab: str = "A",
@@ -6988,7 +6993,7 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def fit_gaussian(
         self, nod_ab: str = "A", extraction_input: str = "custom_extract_2d"
     ) -> None:
@@ -7058,7 +7063,7 @@ class Pipeline:
 
             spec_shift = np.zeros(spec.shape)
 
-            @typechecked
+            @beartype
             def _gaussian(
                 x: np.ndarray, amp: float, mean: float, sigma: float
             ) -> np.ndarray:
@@ -7194,13 +7199,13 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def remove_starlight(
         self,
         nod_ab: str = "A",
         input_folder: str = "correct_wavelengths_2d",
         lp_window_length: int = 501,
-        telluric_mask: Tuple[float, float] = (0.4, 2.0),
+        telluric_mask: typing.Tuple[float, float] = (0.4, 2.0),
         svd_broadening_kernel: bool = False,
     ) -> None:
         """
@@ -7340,14 +7345,14 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def remove_systematics(
         self,
         nod_ab: str = "A",
         n_modes: int = 5,
         input_folder: str = "remove_starlight",
         normalize: bool = True,
-        exclude_rows: Optional[List[int]] = None,
+        exclude_rows: typing.Optional[typing.List[int]] = None,
     ) -> None:
         """
         Method for removing systematics from the data using
@@ -7447,7 +7452,9 @@ class Pipeline:
                     # residuals = um @ np.diag(s_new) @ vm
 
                     # Compute SVD on selected rows
-                    um, sm, vm = np.linalg.svd(order_spec[row_select], full_matrices=False)
+                    um, sm, vm = np.linalg.svd(
+                        order_spec[row_select], full_matrices=False
+                    )
 
                     # Project all rows onto the PCA basis
                     coeffs = order_spec @ vm.T
@@ -7488,18 +7495,18 @@ class Pipeline:
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
 
-    @typechecked
+    @beartype
     def detection_map(
         self,
         model_flux: np.ndarray,
         model_wavel: np.ndarray,
         rv_grid: np.ndarray = np.linspace(-150, 150, 301),
-        vsini_grid: Optional[np.ndarray] = None,
+        vsini_grid: typing.Optional[np.ndarray] = None,
         nod_ab: str = "A",
         input_folder: str = "remove_systematics",
         hp_window_length: int = 501,
         error_weighted: bool = False,
-    ) -> Tuple[np.ndarray, np.ndarray, float]:
+    ) -> typing.Tuple[np.ndarray, np.ndarray, float]:
         """
         Method for cross-correlating each row of the 2D extracted
         spectra with a model template.
@@ -7574,7 +7581,7 @@ class Pipeline:
         else:
             total_ccf = np.full(vsini_grid.size, None)
 
-        @typechecked
+        @beartype
         def _make_ccf_plot(ccf_array: np.ndarray) -> mpl.figure.Figure:
             """
             Internal method for creating a plot of the detection map.
@@ -7617,8 +7624,10 @@ class Pipeline:
 
             return fig
 
-        @typechecked
-        def _make_multi_ccf_plot(ccf_array: List[np.ndarray]) -> mpl.figure.Figure:
+        @beartype
+        def _make_multi_ccf_plot(
+            ccf_array: typing.List[np.ndarray],
+        ) -> mpl.figure.Figure:
             """
             Internal method for creating a grid of plots with
             detection maps for the :math:`v\\sin\\,i` values
@@ -7857,7 +7866,7 @@ class Pipeline:
 
         return total_ccf, rv_grid, fov
 
-    @typechecked
+    @beartype
     def plot_spectra(
         self,
         nod_ab: str = "A",
@@ -8034,7 +8043,7 @@ class Pipeline:
             plt.clf()
             plt.close()
 
-    @typechecked
+    @beartype
     def export_spectra(
         self,
         nod_ab: str = "A",
@@ -8141,7 +8150,7 @@ class Pipeline:
 
             count += 1
 
-    @typechecked
+    @beartype
     def clean_folder(self, keep_product: bool = True) -> None:
         """
         Method for removing all the output that is produced by the
@@ -8189,7 +8198,7 @@ class Pipeline:
             else:
                 print(" [NOT FOUND]")
 
-    @typechecked
+    @beartype
     def run_recipes(self) -> None:
         """
         Method for running the full chain of recipes up and

@@ -6,17 +6,15 @@ import bz2
 import lzma
 import os
 
-from typing import Optional, Tuple
-
 import numpy as np
 import pooch
 
+from beartype import beartype, typing
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
-from typeguard import typechecked
 
 
-@typechecked
+@beartype
 def lowpass_filter(flux: np.ndarray, window_length: int) -> np.ndarray:
     """
     Function that low-pass filters a spectrum.
@@ -47,7 +45,7 @@ def lowpass_filter(flux: np.ndarray, window_length: int) -> np.ndarray:
     return filtered
 
 
-@typechecked
+@beartype
 def highpass_filter(order_flux: np.ndarray, window_length: int) -> np.ndarray:
     """
     Function that high-pass filters a spectrum.
@@ -70,7 +68,7 @@ def highpass_filter(order_flux: np.ndarray, window_length: int) -> np.ndarray:
     return order_flux - continuum
 
 
-@typechecked
+@beartype
 def mask_tellurics(
     order_flux: np.ndarray,
     order_wl: np.ndarray,
@@ -118,7 +116,7 @@ def mask_tellurics(
     return masked_order
 
 
-@typechecked
+@beartype
 def fit_svd_kernel(
     order_flux: np.ndarray,
     order_wl: np.ndarray,
@@ -173,7 +171,7 @@ def fit_svd_kernel(
     return result
 
 
-@typechecked
+@beartype
 def flag_outliers(
     order_flux: np.ndarray, sigma: float = 4.0, fill_value: float = np.nan
 ) -> np.ndarray:
@@ -330,13 +328,13 @@ def fastRotBroad(wvl, flux, epsilon, vsini, effWvl=None):
     return result
 
 
-@typechecked
+@beartype
 def load_bt_settl_template(
     t_eff: float,
     log_g: float,
-    vsini: Optional[float] = None,
-    wl_lims: Tuple[float, float] = (0.8, 3.0),
-) -> Tuple[np.ndarray, np.ndarray]:
+    vsini: typing.Optional[float] = None,
+    wl_lims: typing.Tuple[float, float] = (0.8, 3.0),
+) -> typing.Tuple[np.ndarray, np.ndarray]:
     """
     Function that loads a BT-SETTL template for the given
     temperature, surface gravity and vsin(i).
