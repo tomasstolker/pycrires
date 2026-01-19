@@ -4706,11 +4706,11 @@ class Pipeline:
     @beartype
     def obs_nodding_irregular(
         self,
-        verbose: bool = False,
+        unique_pairs: bool = False,
         correct_bad_pixels: bool = True,
         extraction_required: bool = True,
         check_existing: bool = False,
-        unique_pairs: bool = False,
+        verbose: bool = False,
         create_sof: bool = True,
     ) -> None:
         """
@@ -4718,8 +4718,12 @@ class Pipeline:
 
         Parameters
         ----------
-        verbose : bool
-            Print output produced by ``esorex``.
+        unique_pairs : bool
+            In case of nods with multiple but equal numbers of
+            exposures (e.g. AABB BBAA AABB...), pair each A uniquely
+            to each B in sequence. So the nth A goes with the nth B
+            and the nth B goes with the nth A. This will only be
+            carried out if the numbers of nodding  exposures is equal.
         correct_bad_pixels : bool
             Correct bad pixels with the bad pixel map and
             ``skimage.restoration.inpaint``. If set to
@@ -4740,12 +4744,8 @@ class Pipeline:
         check_existing : bool
             Search for existing files in the product
             folder. Avoids re-reducing existing files.
-        unique_pairs : bool
-            In case of nods with multiple but equal numbers of
-            exposures (e.g. AABB BBAA AABB...), pair each A uniquely
-            to each B in sequence. So the nth A goes with the nth B
-            and the nth B goes with the nth A. This will only be
-            carried out if the numbers of nodding  exposures is equal.
+        verbose : bool
+            Print output produced by ``esorex``.
         create_sof : bool
             Create a new SOF file. Setting the argument to ``True``
             will overwrite the SOF file if already present. Setting
@@ -5010,7 +5010,6 @@ class Pipeline:
                     f"--recipe-config={config_file}",
                     f"--output-dir={output_dir}",
                     "cr2res_obs_nodding",
-                    sof_file,
                 ]
 
                 if not extraction_required:
@@ -5030,6 +5029,9 @@ class Pipeline:
                         "spectra in order to maintain the "
                         "spatial dimension."
                     )
+
+                esorex.append(sof_file)
+
                 if verbose:
                     stdout = None
                 else:
