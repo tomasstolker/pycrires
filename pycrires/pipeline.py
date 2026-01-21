@@ -6114,8 +6114,8 @@ class Pipeline:
         function and maximizing the correlation with the telluric
         model spectrum from SkyCalc, obtained with
         :func:`~pycrires.pipeline.Pipeline.run_skycalc`. This function
-        can be applied to 2D extracted spectra, when one wants to keep
-        the spatial information. The ``accuracy`` can be iteratively
+        can be applied to 2D extracted spectra if the spatial dimension
+        needs to be maintained. The ``accuracy`` can be iteratively
         increased by also adjusting the ``input_folder``.
 
         Parameters
@@ -6162,7 +6162,8 @@ class Pipeline:
             Store plots with the 2D cross-correlation maps
             (default: False). These maps do not show the quadratic
             term, for which the best-fit value is used for each
-            pair of parameters.
+            pair of parameters. One plot file is created when
+            ``collapse_exposures=True``.
 
         Returns
         -------
@@ -6189,42 +6190,48 @@ class Pipeline:
 
         print(" [DONE]")
 
-        # Read spectra
+        # Select all spectra files from input folder
 
         path_load = self.product_folder / input_folder / f"*_{nod_ab}_*.fits"
         fits_files = sorted(glob.glob(str(path_load)))
+
+        # Optionally collapse all exposures
 
         if collapse_exposures:
             tot_flux = 0
             normalization = 0
 
-            for fits_file in fits_files:
-                with fits.open(fits_file) as hdu_list:
-                    tot_flux += hdu_list["SPEC"].data / (hdu_list["ERR"].data + 1) ** 2
-                    normalization += 1 / (hdu_list["ERR"].data + 1) ** 2
+            for file_item in fits_files:
+                with fits.open(file_item) as hdu_list:
+                    tot_flux += (
+                        hdu_list["SPEC"].data / (hdu_list["ERR"].data + 1.0) ** 2
+                    )
+                    normalization += 1.0 / (hdu_list["ERR"].data + 1.0) ** 2
 
             tot_flux = tot_flux / normalization
+
+            # Loop only over the first FITS file
             loop_files = fits_files[:1]
 
         else:
+            # Loop over all FITS files
             loop_files = fits_files
+            tot_flux = None
 
-        print(loop_files)
         for fits_file in loop_files:
             print(f"\nReading spectra from {fits_file}...", end="", flush=True)
 
             hdu_list = fits.open(fits_file)
-            corrected_wavel = hdu_list["WAVE"].data
+            current_wavel = hdu_list["WAVE"].data
 
-            n_det = corrected_wavel.shape[0]
-            n_order = corrected_wavel.shape[1]
+            n_det = hdu_list["SPEC"].data.shape[0]
+            n_order = hdu_list["SPEC"].data.shape[1]
 
             print(" [DONE]")
 
             if create_plots:
-                N_orders = hdu_list["SPEC"].data.shape[1]
                 fig, axes = plt.subplots(
-                    N_orders, n_det, figsize=(9, 15), sharex=False, sharey=False
+                    n_order, n_det, figsize=(9, 15), sharex=False, sharey=False
                 )
 
             for det_idx in range(n_det):
@@ -6235,29 +6242,47 @@ class Pipeline:
                 for order_idx in np.arange(n_order):
                     # Extract WL and SPEC for given order/detector
                     wavel_2d = hdu_list["WAVE"].data[det_idx, order_idx]
-                    if not collapse_exposures:
-                        spec_2d = hdu_list["SPEC"].data[det_idx, order_idx]
-                    else:
+                    if collapse_exposures:
+                        # Use the weighted combination of all spectra
                         spec_2d = tot_flux[det_idx, order_idx]
+                    else:
+                        # Read the 2D sepctrum of the current FITS file
+                        spec_2d = hdu_list["SPEC"].data[det_idx, order_idx]
 
-                    # Optionally sum over the spatial dimension to boost SNR
                     if collapse_spatially:
+                        # Optionally sum over the spatial dimension
+                        # to enhance the SNR of the telluric lines
+
+                        # List with 1 array that contains the mean
+                        # wavelength of the current solution
                         wavel_list = [np.nanmean(wavel_2d, axis=0)]
 
+                        # Index of the central row
                         cent_idx = spec_2d.shape[0] // 2 + 1
+
+                        # Select the central 13 rows
                         spec_2d = spec_2d[cent_idx - 6 : cent_idx + 7]
 
+                        # Check if the sum along the wavelength
+                        # dimension is zero for any of the 13 rows
                         if 0.0 in np.nansum(spec_2d, axis=1):
+                            # Create list with 1 array spectrum
+                            # containing only zeros
                             spec_list = [np.zeros(spec_2d.shape[1])]
 
                         else:
+                            # Normalize each row in the 2D
+                            # spectrum by the sum of the row
                             norm_spec = (
                                 spec_2d / np.nansum(spec_2d, axis=1)[:, np.newaxis]
                             )
-                            # spec_list = [np.nansum(spec_2d[cent_idx-7:cent_idx+8], axis=0)]
+
+                            # Create a list with 1 array spectrum
+                            # as the median of the normalized rows
                             spec_list = [np.nanmedian(norm_spec, axis=0)]
 
                     else:
+                        # Or use the current 2D wavelength solution
                         wavel_list = np.copy(wavel_2d)
                         spec_list = np.copy(spec_2d)
 
@@ -6267,7 +6292,10 @@ class Pipeline:
                     )
                     template_std = np.std(transm_spec[wl_mask, 1])
 
-                    if not template_std > minimum_strength:
+                    if template_std < minimum_strength:
+                        # There are not sufficient telluric lines
+                        # to do the wavelength recalibration
+
                         warnings.warn(
                             "There are not enough telluric features to "
                             "correct the wavelength solution for "
@@ -6275,25 +6303,69 @@ class Pipeline:
                             "because the template standard deviation is "
                             f"{template_std:.2e} while the threshold "
                             f"is 'minimum_strength={minimum_strength:.2e}'. "
-                            "Therefore, the wavelength solution from "
-                            "EsoRex will be adopted."
+                            "The wavelength range of the CRIRES spectra "
+                            f"is {np.min(wavel_2d):.2f} to "
+                            f"{np.max(wavel_2d):.2f} nm. The wavelength "
+                            "mask to match with the SkyCalc model "
+                            f"contains {np.sum(wl_mask)} values. "
+                            "The wavelength solution from EsoRex will "
+                            "be adopted."
                         )
 
-                        corrected_wavel[det_idx, order_idx, :, :] = wavel_2d
+                        # Check for collapse_spatially is not needed
+                        # since the original wavelength solution will
+                        # be stored in the output files.
 
-                        # Save original wavelengths to all files for this order
-                        for save_file in fits_files:
+                        if collapse_exposures:
+                            # Save the original wavelengths to
+                            # all files for the current order
+
+                            for save_file in fits_files:
+                                out_file = output_dir / (
+                                    Path(save_file).stem.replace("_corr", "")
+                                    + "_corr.fits"
+                                )
+
+                                if det_idx == 0 and order_idx == 0:
+                                    save_hdu_list = fits.open(save_file)
+                                else:
+                                    save_hdu_list = fits.open(out_file)
+
+                                save_hdu_list["WAVE"].data[
+                                    det_idx, order_idx, :, :
+                                ] = wavel_2d
+
+                                save_hdu_list.writeto(out_file, overwrite=True)
+
+                                self._update_files(
+                                    f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
+                                    str(out_file),
+                                )
+
+                                save_hdu_list.close()
+
+                        else:
+                            # Save the original wavelengths only to
+                            # current FITS file for the current order
+
                             out_file = output_dir / (
-                                Path(save_file).stem.replace("_corr", "")
-                                + "_corr.fits"
+                                Path(fits_file).stem.replace("_corr", "") + "_corr.fits"
                             )
 
                             if det_idx == 0 and order_idx == 0:
-                                save_hdu_list = fits.open(save_file)
+                                # Open the current FITS file for the
+                                # first detector and first order.
+                                # The content will be stored in the
+                                # output FITS file.
+                                save_hdu_list = fits.open(fits_file)
                             else:
+                                # Open the output FITS file, which
+                                # should now have been created
                                 save_hdu_list = fits.open(out_file)
 
-                            save_hdu_list["WAVE"].data[det_idx, order_idx, :, :] = wavel_2d
+                            save_hdu_list["WAVE"].data[
+                                det_idx, order_idx, :, :
+                            ] = wavel_2d
 
                             save_hdu_list.writeto(out_file, overwrite=True)
 
@@ -6305,6 +6377,12 @@ class Pipeline:
                             save_hdu_list.close()
 
                     else:
+                        # There are sufficient telluric lines
+                        # to do the wavelength recalibration
+
+                        # Iterate of the rows of the 2D spectrum
+                        # With collapse_exposures=True, spec_list and
+                        # wavel_list contain 1 array item each
                         for row, (spec, wavel) in enumerate(zip(spec_list, wavel_list)):
                             # Calculate wavelength solution using cross-correlation
                             cross_corr, opt_p, opt_idx = self._xcor_wavelength_solution(
@@ -6325,16 +6403,10 @@ class Pipeline:
                             mean_wavel = np.mean(wavel)
                             dwavel = wavel - mean_wavel
 
-                            # Save new wavelength solution
-                            if collapse_exposures and collapse_spatially:
-                                corrected_wavel[det_idx, order_idx, :, :] = (
-                                    mean_wavel
-                                    + opt_p[0]
-                                    + opt_p[1] * dwavel
-                                    + opt_p[2] * dwavel**2
-                                )
+                            if collapse_exposures:
+                                # Save the updated wavelengths to
+                                # all files for the current order
 
-                                # Save corrected wavelengths to all files for this order
                                 for save_file in fits_files:
                                     out_file = output_dir / (
                                         Path(save_file).stem.replace("_corr", "")
@@ -6346,72 +6418,31 @@ class Pipeline:
                                     else:
                                         save_hdu_list = fits.open(out_file)
 
-                                    save_hdu_list["WAVE"].data[
-                                        det_idx, order_idx, :, :
-                                    ] = corrected_wavel[det_idx, order_idx, :, :]
+                                    if collapse_spatially:
+                                        # Use the wavelength solution
+                                        # for all rows of the order
 
-                                    save_hdu_list.writeto(out_file, overwrite=True)
+                                        save_hdu_list["WAVE"].data[
+                                            det_idx, order_idx, :, :
+                                        ] = (
+                                            mean_wavel
+                                            + opt_p[0]
+                                            + opt_p[1] * dwavel
+                                            + opt_p[2] * dwavel**2
+                                        )
 
-                                    self._update_files(
-                                        f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
-                                        str(out_file),
-                                    )
-
-                                    save_hdu_list.close()
-
-                            elif collapse_exposures:
-                                corrected_wavel[det_idx, order_idx, row, :] = (
-                                    mean_wavel
-                                    + opt_p[0]
-                                    + opt_p[1] * dwavel
-                                    + opt_p[2] * dwavel**2
-                                )
-
-                                # Save corrected wavelengths to all files for this order
-                                for save_file in fits_files:
-                                    out_file = output_dir / (
-                                        Path(save_file).stem + "_corr.fits"
-                                    )
-
-                                    if det_idx == 0 and order_idx == 0:
-                                        save_hdu_list = fits.open(save_file)
                                     else:
-                                        save_hdu_list = fits.open(out_file)
+                                        # Use the wavelength solution
+                                        # only for the selected row
 
-                                    save_hdu_list["WAVE"].data[
-                                        det_idx, order_idx, row, :
-                                    ] = corrected_wavel[det_idx, order_idx, row, :]
-
-                                    save_hdu_list.writeto(out_file, overwrite=True)
-
-                                    self._update_files(
-                                        f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
-                                        str(out_file),
-                                    )
-
-                                    save_hdu_list.close()
-
-                            elif collapse_spatially:
-                                corrected_wavel[det_idx, order_idx, :, :] = (
-                                    mean_wavel
-                                    + opt_p[0]
-                                    + opt_p[1] * dwavel
-                                    + opt_p[2] * dwavel**2
-                                )
-
-                                # Save corrected wavelengths to all files for this order
-                                for save_file in fits_files:
-                                    out_file = output_dir / (
-                                        Path(save_file).stem.replace("_corr", "")
-                                        + "_corr.fits"
-                                    )
-
-                                    if det_idx == 0 and order_idx == 0:
-                                        save_hdu_list = fits.open(save_file)
-                                    else:
-                                        save_hdu_list = fits.open(out_file)
-
-                                    save_hdu_list["WAVE"].data[det_idx, order_idx, :, :] = corrected_wavel[det_idx, order_idx, :, :]
+                                        save_hdu_list["WAVE"].data[
+                                            det_idx, order_idx, row, :
+                                        ] = (
+                                            mean_wavel
+                                            + opt_p[0]
+                                            + opt_p[1] * dwavel
+                                            + opt_p[2] * dwavel**2
+                                        )
 
                                     save_hdu_list.writeto(out_file, overwrite=True)
 
@@ -6423,39 +6454,53 @@ class Pipeline:
                                     save_hdu_list.close()
 
                             else:
-                                # No collapse of exposures and rows
-                                # Store the updated wavelength solution
-                                # for each wavelength row separately
+                                # Save the updated wavelengths only to
+                                # the current file for the current order
 
-                                corrected_wavel[det_idx, order_idx, row, :] = (
-                                    mean_wavel
-                                    + opt_p[0]
-                                    + opt_p[1] * dwavel
-                                    + opt_p[2] * dwavel**2
+                                out_file = output_dir / (
+                                    Path(fits_file).stem.replace("_corr", "")
+                                    + "_corr.fits"
                                 )
 
-                                # Save corrected wavelengths to all files for this order
-                                for save_file in fits_files:
-                                    out_file = output_dir / (
-                                        Path(save_file).stem.replace("_corr", "")
-                                        + "_corr.fits"
+                                if det_idx == 0 and order_idx == 0:
+                                    save_hdu_list = fits.open(fits_file)
+                                else:
+                                    save_hdu_list = fits.open(out_file)
+
+                                if collapse_spatially:
+                                    # Use the wavelength solution
+                                    # for all rows of the order
+
+                                    save_hdu_list["WAVE"].data[
+                                        det_idx, order_idx, :, :
+                                    ] = (
+                                        mean_wavel
+                                        + opt_p[0]
+                                        + opt_p[1] * dwavel
+                                        + opt_p[2] * dwavel**2
                                     )
 
-                                    if det_idx == 0 and order_idx == 0:
-                                        save_hdu_list = fits.open(save_file)
-                                    else:
-                                        save_hdu_list = fits.open(out_file)
+                                else:
+                                    # Use the wavelength solution
+                                    # only for the selected row
 
-                                    save_hdu_list["WAVE"].data[det_idx, order_idx, row, :] = corrected_wavel[det_idx, order_idx, row, :]
-
-                                    save_hdu_list.writeto(out_file, overwrite=True)
-
-                                    self._update_files(
-                                        f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
-                                        str(out_file),
+                                    save_hdu_list["WAVE"].data[
+                                        det_idx, order_idx, row, :
+                                    ] = (
+                                        mean_wavel
+                                        + opt_p[0]
+                                        + opt_p[1] * dwavel
+                                        + opt_p[2] * dwavel**2
                                     )
 
-                                    save_hdu_list.close()
+                                save_hdu_list.writeto(out_file, overwrite=True)
+
+                                self._update_files(
+                                    f"CORRECT_WAVELENGTHS_2D_{nod_ab}",
+                                    str(out_file),
+                                )
+
+                                save_hdu_list.close()
 
                         if create_plots:
                             dlam = wavel[-1] - np.mean(wavel)
@@ -6497,12 +6542,7 @@ class Pipeline:
                     f"{output_dir}/correlation_map_{nod_id}_{exp_id}_{accuracy}.png"
                 )
 
-            # Add corrected wavelengths to CORR_WAVE in existing FITS file
-            if not collapse_exposures:
-                if "CORR_WAVE" in hdu_list:
-                    hdu_list.pop("CORR_WAVE")
-                hdu_list.insert(4, fits.ImageHDU(corrected_wavel, name="CORR_WAVE"))
-                hdu_list.writeto(fits_file, overwrite=True)
+            hdu_list.close()
 
         with open(self.json_file, "w", encoding="utf-8") as json_file:
             json.dump(self.file_dict, json_file, indent=4)
