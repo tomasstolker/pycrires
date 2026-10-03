@@ -60,8 +60,12 @@ Documentation = "https://pycrires.readthedocs.io"
 Repository = "https://github.com/tomasstolker/pycrires"
 Issues = "https://github.com/tomasstolker/pycrires/issues"
 
-[tool.setuptools]
-packages = ["pycrires"]
+[tool.setuptools.packages.find]
+include = ["pycrires*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+pycrires = ["calib_data/*"]
 
 [tool.setuptools_scm]
 write_to = "pycrires/_version.py"

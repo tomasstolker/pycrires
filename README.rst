@@ -6,7 +6,7 @@ Data reduction pipeline for VLT/CRIRES+
 .. container::
 
     | |PyPI Status| |GitHub Release| |Python Versions| |CI Status| |Docs Status|
-    | |License| |Code Coverage| |Code Quality|
+    | |DOI| |License| |Code Coverage| |Code Quality|
 
 *pycrires* is a Python wrapper for running the CRIRES+ recipes of *EsoRex*.
 
@@ -52,6 +52,9 @@ Copyright 2026 Tomas Stolker & Rico Landman
 
 .. |Docs Status| image:: https://img.shields.io/readthedocs/pycrires
    :target: http://pycrires.readthedocs.io
+
+.. |DOI| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.23115911.svg
+   :target: https://doi.org/10.5281/zenodo.23115911
 
 .. |License| image:: https://img.shields.io/github/license/tomasstolker/pycrires
    :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
