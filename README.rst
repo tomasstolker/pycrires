@@ -5,7 +5,8 @@ Data reduction pipeline for VLT/CRIRES+
 
 .. container::
 
-    |PyPI Status| |Python Versions| |CI Status| |Docs Status| |Code Coverage| |Code Quality| |License|
+    | |PyPI Status| |GitHub Release| |Python Versions| |CI Status| |Docs Status|
+    | |License| |Code Coverage| |Code Quality|
 
 *pycrires* is a Python wrapper for running the CRIRES+ recipes of *EsoRex*.
 
@@ -40,6 +41,9 @@ Copyright 2026 Tomas Stolker & Rico Landman
 .. |PyPI Status| image:: https://img.shields.io/pypi/v/pycrires
    :target: https://pypi.python.org/pypi/pycrires
 
+.. |GitHub Release| image:: https://img.shields.io/github/v/release/tomasstolker/pycrires
+   :target: https://github.com/tomasstolker/pycrires/releases
+
 .. |Python Versions| image:: https://img.shields.io/pypi/pyversions/pycrires
    :target: https://pypi.python.org/pypi/pycrires
 
@@ -49,11 +53,11 @@ Copyright 2026 Tomas Stolker & Rico Landman
 .. |Docs Status| image:: https://img.shields.io/readthedocs/pycrires
    :target: http://pycrires.readthedocs.io
 
+.. |License| image:: https://img.shields.io/github/license/tomasstolker/pycrires
+   :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
+
 .. |Code Coverage| image:: https://codecov.io/gh/tomasstolker/pycrires/branch/main/graph/badge.svg?token=LSSCPMJ5JH
    :target: https://codecov.io/gh/tomasstolker/pycrires
 
 .. |Code Quality| image:: https://img.shields.io/codefactor/grade/github/tomasstolker/pycrires
    :target: https://www.codefactor.io/repository/github/tomasstolker/pycrires
-
-.. |License| image:: https://img.shields.io/github/license/tomasstolker/pycrires
-   :target: https://github.com/tomasstolker/pycrires/blob/main/LICENSE
